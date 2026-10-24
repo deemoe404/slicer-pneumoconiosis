@@ -30,7 +30,8 @@ def start():
             if sample.exists():
                 widget.openDirectory(sample)
         status = {"ready": widget.currentIndex >= 0, "case_count": len(widget.cases),
-                  "slicer": slicer.app.applicationVersion, "current_reader": widget.currentReader}
+                  "slicer": slicer.app.applicationVersion, "current_reader": widget.currentReader,
+                  "spatial_tools_ready": widget.pointButton.isEnabled() and widget.regionButton.isEnabled()}
         (ROOT / "local-data").mkdir(parents=True, exist_ok=True)
         (ROOT / "local-data" / "startup-status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2))
         if os.environ.get("PNEUMO_CAPTURE_PREVIEW") == "1":

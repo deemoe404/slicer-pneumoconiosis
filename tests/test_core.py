@@ -4,10 +4,11 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "PneumoconiosisAnnotator"))
-from PneumoconiosisLib.core import AnnotationStore, GRADES, GRADE_CODES, ZONES, empty_zones, validate_complete
+from PneumoconiosisLib.core import AnnotationStore, GRADES, GRADE_CODES, ZONES, empty_zones, polygon_issue, validate_complete
 
 
 class PersistenceTests(unittest.TestCase):
@@ -15,7 +16,8 @@ class PersistenceTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary.name)
         self.store = AnnotationStore(self.directory)
-        self.cases = [{"case_id": f"CXR-{i}", "source_sha256": str(i), "file_path": "/private/source.dcm"} for i in range(2)]
+        self.cases = [{"case_id": f"CXR-{i}", "source_sha256": str(i), "file_path": "/private/source.dcm",
+                       "rows": 3000, "columns": 2500} for i in range(2)]
         self.store.import_cases(self.cases)
 
     def tearDown(self):
@@ -88,6 +90,54 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(package["records"][0]["note"], '=HYPERLINK("example")')
         self.assertNotIn("/private/source", paths[1].read_text())
         self.assertEqual(len(package["history"]), 1)
+
+    def spatial(self, kind="polygon", points=None):
+        return {"id": uuid.uuid4().hex, "kind": kind, "label": "region",
+                "points_ijk": points or [[100, 200, 0], [400, 250, 0], [200, 500, 0]]}
+
+    def test_spatial_restart_reader_case_isolation_and_vertex_export(self):
+        point = self.spatial("point", [[-0.125, 350.5, 0]])
+        polygon = self.spatial()
+        self.store.save("CXR-0", "r", empty_zones(), "", spatial_annotations=[point, polygon])
+        self.store.close()
+        self.store = AnnotationStore(self.directory)
+        annotations = self.store.get("CXR-0", "r")["spatial_annotations"]
+        self.assertEqual(annotations[0]["points_ijk"], point["points_ijk"])
+        self.assertEqual(annotations[1]["state"], "ready")
+        self.assertEqual(self.store.get("CXR-1", "r")["spatial_annotations"], [])
+        self.assertEqual(self.store.get("CXR-0", "other")["spatial_annotations"], [])
+        paths = self.store.export(self.directory / "exports", ["CXR-0", "CXR-1"], "r")
+        vertices = list(csv.DictReader(paths[2].read_text(encoding="utf-8-sig").splitlines()))
+        self.assertEqual(len(vertices), 4)
+        self.assertEqual(float(vertices[0]["i"]), -0.125)
+        package = json.loads(paths[1].read_text())
+        self.assertEqual(package["coordinate_system"]["index_base"], 0)
+        self.assertEqual(package["records"][0]["image"], {"columns": 2500, "rows": 3000})
+        self.assertEqual(package["records"][0]["spatial_annotations"], annotations)
+
+    def test_unfinished_or_crossed_region_autosaves_as_draft_but_cannot_complete(self):
+        zones = {z: {"state": "scored", "grade": "0/0"} for z in ZONES}
+        for points in ([[100, 100, 0]], [[100, 100, 0], [200, 200, 0]],
+                       [[100, 100, 0], [300, 300, 0], [100, 300, 0], [300, 100, 0]],
+                       [[100, 100, 0], [200, 100, 0], [300, 100, 0]]):
+            shape = self.spatial(points=points)
+            saved = self.store.save("CXR-0", "r", zones, "", spatial_annotations=[shape])
+            self.assertEqual(saved["spatial_annotations"][0]["state"], "draft")
+            with self.assertRaises(ValueError):
+                self.store.save("CXR-0", "r", zones, "", "complete", spatial_annotations=[shape])
+        self.assertIsNone(polygon_issue([[0, 0, 0], [100, 0, 0], [100, 100, 0], [0, 100, 0]]))
+
+    def test_bad_spatial_coordinate_cannot_overwrite_and_deletion_is_audited(self):
+        point = self.spatial("point", [[100, 200, 0]])
+        self.store.save("CXR-0", "r", empty_zones(), "", spatial_annotations=[point])
+        for coordinates in ([float("nan"), 200, 0], [2501, 200, 0], [100, -1, 0], [100, 200, 1]):
+            invalid = dict(point, points_ijk=[coordinates])
+            with self.assertRaises(ValueError):
+                self.store.save("CXR-0", "r", empty_zones(), "", spatial_annotations=[invalid])
+            self.assertEqual(self.store.get("CXR-0", "r")["spatial_annotations"][0]["points_ijk"], point["points_ijk"])
+        self.store.save("CXR-0", "r", empty_zones(), "", spatial_annotations=[])
+        self.assertEqual(self.store.get("CXR-0", "r")["spatial_annotations"], [])
+        self.assertEqual(self.store.connection.execute("SELECT count(*) FROM revisions").fetchone()[0], 2)
 
 
 if __name__ == "__main__":

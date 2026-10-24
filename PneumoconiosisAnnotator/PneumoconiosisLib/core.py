@@ -5,9 +5,11 @@ import csv
 import hashlib
 import io
 import json
+import math
 import os
 import sqlite3
 import tempfile
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +19,9 @@ ZONES = ("RU", "RM", "RL", "LU", "LM", "LL")
 ZONE_NAMES = dict(zip(ZONES, ("右上", "右中", "右下", "左上", "左中", "左下")))
 GRADE_CODES = {grade: "P" + grade.replace("/", "_").replace("-", "minus").replace("+", "plus") for grade in GRADES}
 STANDARD = "GBZ 70-2015 + amendment 1"
+COORDINATES = {"system": "image_ijk", "units": "pixel", "index_base": 0,
+               "axes": ["column", "row", "slice"], "origin": "center of top-left stored pixel",
+               "polygon": "ordered vertices; last vertex connects to first"}
 
 
 def utc_now():
@@ -56,6 +61,73 @@ def validate_complete(zones, note):
         raise ValueError("尚未评价：" + "、".join(unread))
     if any(v["state"] == "not_scorable" for v in zones.values()) and not note.strip():
         raise ValueError("请在备注中说明不可评价的肺区及原因。")
+
+
+def polygon_issue(points):
+    """A usable 2D region is a non-degenerate, simple closed polygon."""
+    if len(points) < 3:
+        return "区域至少需要 3 个顶点。"
+    xy = [(p[0], p[1]) for p in points]
+    if len(set(xy)) != len(xy):
+        return "区域有重合顶点，请拖开或删除重复点。"
+
+    def cross(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    def on_segment(a, b, p):
+        return (abs(cross(a, b, p)) < 1e-8 and
+                min(a[0], b[0]) - 1e-8 <= p[0] <= max(a[0], b[0]) + 1e-8 and
+                min(a[1], b[1]) - 1e-8 <= p[1] <= max(a[1], b[1]) + 1e-8)
+
+    edges = list(zip(xy, xy[1:] + xy[:1]))
+    for i, (a, b) in enumerate(edges):
+        for j in range(i + 1, len(edges)):
+            if j == i + 1 or (i == 0 and j == len(edges) - 1):
+                continue
+            c, d = edges[j]
+            crossed = cross(a, b, c) * cross(a, b, d) < 0 and cross(c, d, a) * cross(c, d, b) < 0
+            if crossed or any((on_segment(a, b, c), on_segment(a, b, d), on_segment(c, d, a), on_segment(c, d, b))):
+                return "区域轮廓存在交叉，请拖动顶点修正。"
+    if abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in edges)) < 1e-6:
+        return "区域面积为零，请移动顶点。"
+    # Collinear adjacent edges must not fold back onto each other.
+    for i, b in enumerate(xy):
+        a, c = xy[i - 1], xy[(i + 1) % len(xy)]
+        if abs(cross(a, b, c)) < 1e-8 and (on_segment(a, b, c) or on_segment(b, c, a)):
+            return "区域边界重叠，请移动顶点。"
+    return None
+
+
+def validate_spatial(annotations, image, complete=False):
+    if not isinstance(annotations, list):
+        raise ValueError("空间标注必须为列表。")
+    result, ids = [], set()
+    for annotation in annotations:
+        identifier = str(annotation["id"])
+        uuid.UUID(identifier)
+        if identifier in ids:
+            raise ValueError("空间标注编号重复。")
+        ids.add(identifier)
+        kind, label = annotation["kind"], str(annotation["label"]).strip()
+        if kind not in ("point", "polygon") or not label or len(label) > 80:
+            raise ValueError("标注类型无效，或名称为空 / 超过 80 字。")
+        positions = annotation["points_ijk"]
+        if not positions or (kind == "point" and len(positions) != 1):
+            raise ValueError("点标注必须恰好有一个坐标；区域草稿至少需要一个顶点。")
+        points = []
+        for position in positions:
+            if len(position) != 3 or not all(math.isfinite(float(v)) for v in position):
+                raise ValueError("标注坐标必须为有限的三维像素坐标。")
+            x, y, z = map(float, position)
+            if abs(z) > 1e-3 or not (-0.5 <= x <= image["columns"] - 0.5 and -0.5 <= y <= image["rows"] - 0.5):
+                raise ValueError("标注点超出胸片边界或离开图像平面，请拖回图内或删除该标注。")
+            points.append([round(x, 6), round(y, 6), 0.0])
+        issue = polygon_issue(points) if kind == "polygon" else None
+        if complete and issue:
+            raise ValueError(label + "：" + issue)
+        result.append({"id": identifier, "kind": kind, "label": label, "points_ijk": points,
+                       "state": "draft" if issue else "ready"})
+    return result
 
 
 def file_sha256(path):
@@ -163,20 +235,28 @@ class AnnotationStore:
         row = self.connection.execute("SELECT payload_json, updated_at FROM annotations WHERE case_id=? AND reader_id=?", (case_id, reader)).fetchone()
         if row:
             value = json.loads(row[0])
+            value.setdefault("spatial_annotations", [])
             value["updated_at"] = row[1]
             return value
-        return {"schema_version": 1, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
-                "zones": empty_zones(), "note": "", "status": "draft", "display": {}, "updated_at": None}
+        return {"schema_version": 2, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
+                "zones": empty_zones(), "spatial_annotations": [], "note": "", "status": "draft", "display": {}, "updated_at": None}
 
-    def save(self, case_id, reader, zones, note, status="draft", display=None):
+    def save(self, case_id, reader, zones, note, status="draft", display=None, spatial_annotations=None):
         reader = validate_reader(reader)
         zones = validate_zones(zones)
         if status not in ("draft", "complete"):
             raise ValueError("无效的病例状态。")
         if status == "complete":
             validate_complete(zones, note)
-        payload = {"schema_version": 1, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
-                   "zones": zones, "note": str(note), "status": status, "display": display or {}}
+        case_row = self.connection.execute("SELECT metadata_json FROM cases WHERE case_id=?", (case_id,)).fetchone()
+        if not case_row:
+            raise ValueError("病例不存在。")
+        metadata = json.loads(case_row[0])
+        image = {k: metadata[k] for k in ("columns", "rows")}
+        spatial = validate_spatial(spatial_annotations or [], image, complete=status == "complete")
+        payload = {"schema_version": 2, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
+                   "zones": zones, "note": str(note), "status": status, "display": display or {},
+                   "image": image, "spatial_annotations": spatial}
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False)
         timestamp = utc_now()
         with self.connection:
@@ -207,15 +287,20 @@ class AnnotationStore:
         with self.connection:
             self.connection.execute("BEGIN")
             records = [self.get(case_id, reader) for case_id in case_ids]
+            for record in records:
+                metadata = json.loads(self.connection.execute("SELECT metadata_json FROM cases WHERE case_id=?", (record["case_id"],)).fetchone()[0])
+                record["image"] = {k: metadata[k] for k in ("columns", "rows")}
             # The audit history and current ratings belong to the same read transaction.
             wanted = set(case_ids)
             history = [{"revision": r[0], "at": r[2], "annotation": json.loads(r[3])}
                        for r in self.connection.execute("SELECT id, case_id, created_at, payload_json FROM revisions WHERE reader_id=? ORDER BY id", (reader,)) if r[1] in wanted]
-        package = {"schema_version": 1, "standard": STANDARD, "exported_at": utc_now(), "reader_id": reader,
-                   "grade_codes": GRADE_CODES, "zone_names": ZONE_NAMES, "records": records, "history": history}
+        package = {"schema_version": 2, "standard": STANDARD, "exported_at": utc_now(), "reader_id": reader,
+                   "coordinate_system": COORDINATES, "grade_codes": GRADE_CODES, "zone_names": ZONE_NAMES,
+                   "records": records, "history": history}
         stem = "pneumoconiosis-" + reader + "-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         json_path = destination / (stem + ".json")
         csv_path = destination / (stem + ".csv")
+        spatial_path = destination / (stem + "-spatial.csv")
         buffer = io.StringIO(newline="")
         fields = ["case_id", "reader_id", "status", "standard", "zone", "zone_name", "state", "profusion_code", "major_category", "alternative_category", "note", "updated_at"]
         writer = csv.DictWriter(buffer, fieldnames=fields)
@@ -230,13 +315,27 @@ class AnnotationStore:
                        "profusion_code": GRADE_CODES.get(grade, ""), "major_category": parts[0],
                        "alternative_category": parts[1], "note": record["note"], "updated_at": record["updated_at"] or ""}
                 writer.writerow({key: csv_safe(value) for key, value in row.items()})
+        spatial_buffer = io.StringIO(newline="")
+        spatial_fields = ["case_id", "reader_id", "annotation_id", "kind", "label", "state", "vertex_index", "i", "j", "k", "columns", "rows"]
+        spatial_writer = csv.DictWriter(spatial_buffer, fieldnames=spatial_fields)
+        spatial_writer.writeheader()
+        for record in records:
+            for annotation in record["spatial_annotations"]:
+                for index, point in enumerate(annotation["points_ijk"]):
+                    row = {"case_id": record["case_id"], "reader_id": reader,
+                           "annotation_id": annotation["id"], "kind": annotation["kind"], "label": annotation["label"],
+                           "state": annotation["state"], "vertex_index": index,
+                           "i": point[0], "j": point[1], "k": point[2], **record["image"]}
+                    spatial_writer.writerow({key: csv_safe(value) for key, value in row.items()})
         atomic_write(json_path, json.dumps(package, ensure_ascii=False, indent=2, allow_nan=False))
         atomic_write(csv_path, "\ufeff" + buffer.getvalue())
-        return csv_path, json_path
+        atomic_write(spatial_path, "\ufeff" + spatial_buffer.getvalue())
+        return csv_path, json_path, spatial_path
 
 
 def csv_safe(value):
-    value = str(value)
+    if not isinstance(value, str):
+        return value
     # Protect spreadsheet consumers from formulas in reader-entered notes.
     return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n")) else value
 
