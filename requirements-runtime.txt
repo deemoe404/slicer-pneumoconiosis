@@ -1,0 +1,6 @@
+torchxrayvision==1.5.7
+torch==2.14.1
+torchvision==0.29.1
+sounddevice==0.5.6
+numpy==2.5.4
+scipy==1.18.1

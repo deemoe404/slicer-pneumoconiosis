@@ -27,7 +27,7 @@ class PersistenceTests(unittest.TestCase):
     def test_every_grade_survives_restart_as_text(self):
         for grade in GRADES:
             zones = {z: {"state": "scored", "grade": grade} for z in ZONES}
-            self.store.save("CXR-0", "reader-01", zones, "", "complete")
+            self.store.save("CXR-0", "reader-01", zones, "", "complete", quality={"grade": 1, "reason": ""})
             self.store.close()
             self.store = AnnotationStore(self.directory)
             self.assertEqual(self.store.get("CXR-0", "reader-01")["zones"], zones)
@@ -78,7 +78,7 @@ class PersistenceTests(unittest.TestCase):
 
     def test_export_includes_unread_preserves_grades_and_protects_spreadsheets(self):
         zones = {z: {"state": "scored", "grade": GRADES[i]} for i, z in enumerate(ZONES)}
-        self.store.save("CXR-0", "r", zones, "=HYPERLINK(\"example\")", "complete")
+        self.store.save("CXR-0", "r", zones, "=HYPERLINK(\"example\")", "complete", quality={"grade": 1, "reason": ""})
         paths = self.store.export(self.directory / "exports", [c["case_id"] for c in self.cases], "r")
         rows = list(csv.DictReader(paths[0].read_text(encoding="utf-8-sig").splitlines()))
         package = json.loads(paths[1].read_text())
@@ -124,7 +124,7 @@ class PersistenceTests(unittest.TestCase):
             saved = self.store.save("CXR-0", "r", zones, "", spatial_annotations=[shape])
             self.assertEqual(saved["spatial_annotations"][0]["state"], "draft")
             with self.assertRaises(ValueError):
-                self.store.save("CXR-0", "r", zones, "", "complete", spatial_annotations=[shape])
+                self.store.save("CXR-0", "r", zones, "", "complete", spatial_annotations=[shape], quality={"grade": 1, "reason": ""})
         self.assertIsNone(polygon_issue([[0, 0, 0], [100, 0, 0], [100, 100, 0], [0, 100, 0]]))
 
     def test_bad_spatial_coordinate_cannot_overwrite_and_deletion_is_audited(self):

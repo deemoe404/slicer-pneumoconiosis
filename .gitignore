@@ -11,3 +11,9 @@ local-data/
 *.nrrd
 *.nii*
 *.log
+*.wav
+*.npy
+*.npz
+*.pth
+*.onnx
+/pneumoconiosis-*/

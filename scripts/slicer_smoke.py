@@ -51,6 +51,7 @@ def run():
         w.noteEdit.setPlainText("仅 QA：自动保存与恢复测试")
         events(0.65)
         first_id = w.cases[0]["case_id"]
+        w.features.qualityCombo.setCurrentIndex(w.features.qualityCombo.findData(1))
         saved = w.store.get(first_id, "qa-reader")
         check(saved["note"].startswith("仅 QA"), "debounced note autosaves without a save button")
         first_zones = w._zonesFromUI()
@@ -75,6 +76,7 @@ def run():
         check(w.flushSave(), "retry recovers buffered input after storage failure")
         # Non-scorable is explicitly different from zero and requires a reason at completion.
         w.selectCase(2)
+        w.features.qualityCombo.setCurrentIndex(w.features.qualityCombo.findData(1))
         for zone in ZONES:
             w.gradeCombos[zone].setCurrentIndex(w.gradeCombos[zone].findData("0/0"))
         w.gradeCombos["RU"].setCurrentIndex(w.gradeCombos["RU"].findData("not_scorable"))

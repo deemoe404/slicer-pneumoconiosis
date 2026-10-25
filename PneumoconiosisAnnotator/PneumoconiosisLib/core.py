@@ -14,11 +14,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .assets import AssetStore, atomic_bytes
+
 GRADES = ("0/-", "0/0", "0/1", "1/0", "1/1", "1/2", "2/1", "2/2", "2/3", "3/2", "3/3", "3/+")
 ZONES = ("RU", "RM", "RL", "LU", "LM", "LL")
 ZONE_NAMES = dict(zip(ZONES, ("右上", "右中", "右下", "左上", "左中", "左下")))
 GRADE_CODES = {grade: "P" + grade.replace("/", "_").replace("-", "minus").replace("+", "plus") for grade in GRADES}
 STANDARD = "GBZ 70-2015 + amendment 1"
+QUALITY_GRADES = {1: "优片", 2: "良片", 3: "差片", 4: "废片"}
 COORDINATES = {"system": "image_ijk", "units": "pixel", "index_base": 0,
                "axes": ["column", "row", "slice"], "origin": "center of top-left stored pixel",
                "polygon": "ordered vertices; last vertex connects to first"}
@@ -61,6 +64,20 @@ def validate_complete(zones, note):
         raise ValueError("尚未评价：" + "、".join(unread))
     if any(v["state"] == "not_scorable" for v in zones.values()) and not note.strip():
         raise ValueError("请在备注中说明不可评价的肺区及原因。")
+
+
+def validate_quality(quality, complete=False):
+    value = quality or {"grade": None, "reason": ""}
+    grade, reason = value.get("grade"), str(value.get("reason", "")).strip()
+    if grade is not None and (type(grade) is not int or grade not in QUALITY_GRADES):
+        raise ValueError("整片质量请选择 1–4 级，或保留未评。")
+    if len(reason) > 2000:
+        raise ValueError("质量缺陷说明最多 2000 字。")
+    if complete and grade is None:
+        raise ValueError("整片质量尚未评价。")
+    if complete and grade in (3, 4) and not reason:
+        raise ValueError("请说明差片 / 废片的质量缺陷。")
+    return {"grade": grade, "reason": reason}
 
 
 def polygon_issue(points):
@@ -187,6 +204,7 @@ class AnnotationStore:
         self.directory = Path(directory).expanduser().resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
         self.path = self.directory / "annotations.sqlite3"
+        self.assets = AssetStore(self.directory)
         self.connection = sqlite3.connect(self.path, timeout=5)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys=ON")
@@ -236,27 +254,47 @@ class AnnotationStore:
         if row:
             value = json.loads(row[0])
             value.setdefault("spatial_annotations", [])
+            value.setdefault("quality", {"grade": None, "reason": ""})
+            value.setdefault("partition", None)
+            value.setdefault("audio", [])
+            if value["status"] == "complete" and value["quality"]["grade"] is None:
+                value["status"] = "draft"
             value["updated_at"] = row[1]
             return value
-        return {"schema_version": 2, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
-                "zones": empty_zones(), "spatial_annotations": [], "note": "", "status": "draft", "display": {}, "updated_at": None}
+        return {"schema_version": 3, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
+                "zones": empty_zones(), "spatial_annotations": [], "quality": {"grade": None, "reason": ""},
+                "partition": None, "audio": [], "note": "", "status": "draft", "display": {}, "updated_at": None}
 
-    def save(self, case_id, reader, zones, note, status="draft", display=None, spatial_annotations=None):
+    def save(self, case_id, reader, zones, note, status="draft", display=None, spatial_annotations=None,
+             quality=None, partition=None, audio=None):
         reader = validate_reader(reader)
         zones = validate_zones(zones)
         if status not in ("draft", "complete"):
             raise ValueError("无效的病例状态。")
         if status == "complete":
             validate_complete(zones, note)
+        quality = validate_quality(quality, complete=status == "complete")
         case_row = self.connection.execute("SELECT metadata_json FROM cases WHERE case_id=?", (case_id,)).fetchone()
         if not case_row:
             raise ValueError("病例不存在。")
         metadata = json.loads(case_row[0])
         image = {k: metadata[k] for k in ("columns", "rows")}
         spatial = validate_spatial(spatial_annotations or [], image, complete=status == "complete")
-        payload = {"schema_version": 2, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
+        from .audio_files import validate_audio
+        audio = validate_audio(audio or [], self.directory)
+        if any(not a["path"].startswith(f"assets/audio/{case_id}/{reader}/") for a in audio):
+            raise ValueError("录音不属于当前病例和读者，已停止保存。")
+        if partition is not None:
+            from .partition import validate_partition
+            partition = validate_partition(partition, image, self.assets, complete=status == "complete")
+            if partition["source_sha256"] != metadata["source_sha256"]:
+                raise ValueError("分区不对应当前原始胸片，已停止保存。")
+            if partition["state"] == "confirmed" and partition.get("confirmed_by") != reader:
+                raise ValueError("分区确认不属于当前读者，请由当前读者重新确认。")
+        payload = {"schema_version": 3, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
                    "zones": zones, "note": str(note), "status": status, "display": display or {},
-                   "image": image, "spatial_annotations": spatial}
+                   "image": image, "spatial_annotations": spatial, "quality": quality,
+                   "partition": partition, "audio": audio}
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False)
         timestamp = utc_now()
         with self.connection:
@@ -277,7 +315,26 @@ class AnnotationStore:
     def completion(self, case_ids, reader):
         rows = self.connection.execute("SELECT case_id, payload_json FROM annotations WHERE reader_id=?", (reader,)).fetchall()
         active = set(case_ids)
-        return {row[0]: json.loads(row[1])["status"] for row in rows if row[0] in active}
+        result = {}
+        for case_id, payload in rows:
+            if case_id in active:
+                value = json.loads(payload)
+                result[case_id] = value["status"] if value.get("quality", {}).get("grade") is not None else "draft"
+        return result
+
+    def recover_audio(self):
+        from .audio_files import pending_recordings
+        recovered = 0
+        for case_id, reader, recording in pending_recordings(self.directory):
+            if not self.connection.execute("SELECT 1 FROM cases WHERE case_id=?", (case_id,)).fetchone():
+                continue
+            record = self.get(case_id, reader)
+            if any(a["id"] == recording["id"] for a in record["audio"]):
+                continue
+            self.save(case_id, reader, record["zones"], record["note"], "draft", record["display"],
+                      record["spatial_annotations"], record["quality"], record["partition"], record["audio"] + [recording])
+            recovered += 1
+        return recovered
 
     def export(self, destination, case_ids, reader):
         """Export one reader's consistent snapshot, including unread cases, without source identifiers."""
@@ -294,15 +351,45 @@ class AnnotationStore:
             wanted = set(case_ids)
             history = [{"revision": r[0], "at": r[2], "annotation": json.loads(r[3])}
                        for r in self.connection.execute("SELECT id, case_id, created_at, payload_json FROM revisions WHERE reader_id=? ORDER BY id", (reader,)) if r[1] in wanted]
-        package = {"schema_version": 2, "standard": STANDARD, "exported_at": utc_now(), "reader_id": reader,
+        package = {"schema_version": 3, "standard": STANDARD, "exported_at": utc_now(), "reader_id": reader,
                    "coordinate_system": COORDINATES, "grade_codes": GRADE_CODES, "zone_names": ZONE_NAMES,
+                   "quality_grades": QUALITY_GRADES,
                    "records": records, "history": history}
         stem = "pneumoconiosis-" + reader + "-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        json_path = destination / (stem + ".json")
-        csv_path = destination / (stem + ".csv")
-        spatial_path = destination / (stem + "-spatial.csv")
+        # Rename a complete bundle into place; a failure leaves only a clearly
+        # marked hidden partial directory, never a successful-looking export.
+        temporary = Path(tempfile.mkdtemp(prefix=".partial-export-", dir=destination))
+        final_directory = destination / stem
+        copied = set()
+        for record in records + [revision["annotation"] for revision in history]:
+            references = list(record.get("audio", []))
+            partition = record.get("partition")
+            if partition:
+                references.extend((partition["baseline"], partition["masks"]))
+            for reference in references:
+                if reference["path"] not in copied:
+                    atomic_bytes(temporary / reference["path"], self.assets.read(reference))
+                    copied.add(reference["path"])
+        for record in records:
+            if record["partition"]:
+                import numpy as np
+                from .partition import ZONE_LABELS, zone_map
+                partition = record["partition"]
+                labels = zone_map(*self.assets.lungs(partition["masks"]), partition["landmarks"])
+                stream = io.BytesIO()
+                np.savez_compressed(stream, zones=labels)
+                data = stream.getvalue()
+                relative = "zone-maps/" + record["case_id"] + ".npz"
+                atomic_bytes(temporary / relative, data)
+                partition["zone_map"] = {"path": relative, "sha256": hashlib.sha256(data).hexdigest(),
+                                         "axes": ["row", "column"], "background": 0, "labels": ZONE_LABELS}
+        json_path = temporary / (stem + ".json")
+        csv_path = temporary / (stem + ".csv")
+        spatial_path = temporary / (stem + "-spatial.csv")
         buffer = io.StringIO(newline="")
-        fields = ["case_id", "reader_id", "status", "standard", "zone", "zone_name", "state", "profusion_code", "major_category", "alternative_category", "note", "updated_at"]
+        fields = ["case_id", "reader_id", "status", "standard", "quality_grade", "quality_name", "quality_reason",
+                  "zone", "zone_name", "state", "profusion_code", "major_category", "alternative_category",
+                  "partition_state", "audio_count", "audio_paths", "note", "updated_at"]
         writer = csv.DictWriter(buffer, fieldnames=fields)
         writer.writeheader()
         for record in records:
@@ -311,9 +398,13 @@ class AnnotationStore:
                 grade = value["grade"]
                 parts = grade.split("/") if grade else ("", "")
                 row = {"case_id": record["case_id"], "reader_id": reader, "status": record["status"], "standard": STANDARD,
+                       "quality_grade": record["quality"]["grade"] if record["quality"]["grade"] is not None else "",
+                       "quality_name": QUALITY_GRADES.get(record["quality"]["grade"], ""), "quality_reason": record["quality"]["reason"],
                        "zone": zone, "zone_name": ZONE_NAMES[zone], "state": value["state"],
                        "profusion_code": GRADE_CODES.get(grade, ""), "major_category": parts[0],
-                       "alternative_category": parts[1], "note": record["note"], "updated_at": record["updated_at"] or ""}
+                       "alternative_category": parts[1], "note": record["note"], "updated_at": record["updated_at"] or "",
+                       "partition_state": record["partition"]["state"] if record["partition"] else "not_generated",
+                       "audio_count": len(record["audio"]), "audio_paths": "|".join(a["path"] for a in record["audio"])}
                 writer.writerow({key: csv_safe(value) for key, value in row.items()})
         spatial_buffer = io.StringIO(newline="")
         spatial_fields = ["case_id", "reader_id", "annotation_id", "kind", "label", "state", "vertex_index", "i", "j", "k", "columns", "rows"]
@@ -330,7 +421,8 @@ class AnnotationStore:
         atomic_write(json_path, json.dumps(package, ensure_ascii=False, indent=2, allow_nan=False))
         atomic_write(csv_path, "\ufeff" + buffer.getvalue())
         atomic_write(spatial_path, "\ufeff" + spatial_buffer.getvalue())
-        return csv_path, json_path, spatial_path
+        os.replace(temporary, final_directory)
+        return tuple(final_directory / p.name for p in (csv_path, json_path, spatial_path))
 
 
 def csv_safe(value):

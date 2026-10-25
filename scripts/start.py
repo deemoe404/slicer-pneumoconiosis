@@ -31,7 +31,11 @@ def start():
                 widget.openDirectory(sample)
         status = {"ready": widget.currentIndex >= 0, "case_count": len(widget.cases),
                   "slicer": slicer.app.applicationVersion, "current_reader": widget.currentReader,
-                  "spatial_tools_ready": widget.pointButton.isEnabled() and widget.regionButton.isEnabled()}
+                  "spatial_tools_ready": widget.pointButton.isEnabled() and widget.regionButton.isEnabled(),
+                  "quality_control_ready": widget.features.qualityCombo.isEnabled(),
+                  "audio_control_ready": widget.features.recordButton.isEnabled(),
+                  "partition_state": widget.features.partition.state["state"] if widget.features.partition.state else None,
+                  "visible_zone_count": widget.features.partition.overlay.GetSegmentation().GetNumberOfSegments() if widget.features.partition.overlay else 0}
         (ROOT / "local-data").mkdir(parents=True, exist_ok=True)
         (ROOT / "local-data" / "startup-status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2))
         if os.environ.get("PNEUMO_CAPTURE_PREVIEW") == "1":

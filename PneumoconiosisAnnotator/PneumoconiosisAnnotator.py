@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import qt
+import ctk
 import slicer
 import vtk
 from slicer.ScriptedLoadableModule import ScriptedLoadableModule, ScriptedLoadableModuleWidget
@@ -22,6 +23,9 @@ from PneumoconiosisLib.core import (
     validate_complete, validate_reader, validate_spatial,
 )
 from PneumoconiosisLib.markups import ImageMarkups
+from PneumoconiosisLib.features import CaseFeatures
+from PneumoconiosisLib.core import validate_quality
+from PneumoconiosisLib.partition import validate_partition
 
 
 class PneumoconiosisAnnotator(ScriptedLoadableModule):
@@ -29,9 +33,9 @@ class PneumoconiosisAnnotator(ScriptedLoadableModule):
         super().__init__(parent)
         self.parent.title = "尘肺胸片标注"
         self.parent.categories = ["Research"]
-        self.parent.dependencies = ["DICOM", "Volumes", "Colors", "Markups"]
+        self.parent.dependencies = ["DICOM", "Volumes", "Colors", "Markups", "Segmentations", "SegmentEditor"]
         self.parent.contributors = ["SUEP CT Research"]
-        self.parent.helpText = "六肺区小阴影密集度、点和闭合多边形标注。原图只读，标注自动保存到本地。"
+        self.parent.helpText = "整片质量、六区评分、语音录音和医生可修正的自动肺野分区。原图只读，标注自动保存到本地。"
         self.parent.acknowledgementText = "基于 3D Slicer 的科研标注模块。"
 
 
@@ -41,7 +45,7 @@ class CloseGuard(qt.QWidget):
         self.widget = widget
 
     def eventFilter(self, obj, event):
-        if event.type() == qt.QEvent.Close and not self.widget.flushSave():
+        if event.type() == qt.QEvent.Close and not self.widget.prepareLeave():
             event.ignore()
             return True
         return False
@@ -75,6 +79,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
     def setup(self):
         super().setup()
         self.store = None
+        self.projectLock = None
         self.cases = []
         self.currentIndex = -1
         self.currentReader = "reader-01"
@@ -125,6 +130,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.layout.addWidget(self.progressLabel)
 
         nav = qt.QHBoxLayout()
+        self.navLayout = nav
         self.previousButton = qt.QPushButton("← 上一例")
         self.nextButton = qt.QPushButton("下一例 →")
         self.previousButton.connect("clicked()", lambda: self.selectCase(self.currentIndex - 1))
@@ -137,6 +143,9 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.orientationLabel.setWordWrap(True)
         self.orientationLabel.setStyleSheet("color:#c79238; font-size:11px; margin:6px 0;")
         self.layout.addWidget(self.orientationLabel)
+
+        self.features = CaseFeatures(self, ROOT)
+        self.layout.addWidget(self.features.qualityWidget)
 
         ratings = qt.QGroupBox("六肺区评分")
         grid = qt.QGridLayout(ratings)
@@ -159,8 +168,12 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
                 self.gradeCombos[zone] = combo
                 grid.addWidget(combo, row, column + 1)
         self.layout.addWidget(ratings)
+        self.layout.addWidget(self.features.partitionWidget)
 
-        spatial = qt.QGroupBox("点与区域")
+        spatial = ctk.ctkCollapsibleButton()
+        spatial.text = "点与区域"
+        spatial.collapsed = True
+        self.spatialGroup = spatial
         spatial_layout = qt.QVBoxLayout(spatial)
         tools = qt.QHBoxLayout()
         self.pointButton = qt.QPushButton("＋ 标注点")
@@ -192,10 +205,11 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         spatial_layout.addWidget(self.spatialHint)
         self.layout.addWidget(spatial)
         self.markups = ImageMarkups(self.spatialChanged, self.updateSpatialControls)
+        self.layout.addWidget(self.features.audioWidget)
 
         self.layout.addWidget(qt.QLabel("备注 / 不可评价原因"))
         self.noteEdit = qt.QPlainTextEdit()
-        self.noteEdit.setMaximumHeight(72)
+        self.noteEdit.setMaximumHeight(56)
         self.noteEdit.setPlaceholderText("不可评价时，请注明肺区和原因。")
         self.noteEdit.connect("textChanged()", self.noteChanged)
         self.layout.addWidget(self.noteEdit)
@@ -211,7 +225,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.completeButton.setMinimumHeight(34)
         self.completeButton.setStyleSheet("font-weight:600;")
         self.completeButton.connect("clicked()", self.completeCase)
-        self.layout.addWidget(self.completeButton)
+        self.navLayout.addWidget(self.completeButton)
 
         image_row = qt.QHBoxLayout()
         self.fitButton = qt.QPushButton("适应窗口")
@@ -251,13 +265,13 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         red.sliceController().hide()
 
     def exit(self):
-        self.markups.finish()
-        self.flushSave()
+        self.prepareLeave()
         self.entered = False
 
     def cleanup(self):
         self.saveTimer.stop()
-        self.flushSave()
+        self.prepareLeave()
+        self.features.close()
         self.markups.close()
         if getattr(self, "closeGuard", None):
             slicer.util.mainWindow().removeEventFilter(self.closeGuard)
@@ -268,9 +282,13 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         if self.store:
             self.store.close()
             self.store = None
+        if self.projectLock:
+            self.projectLock.unlock()
+            self.projectLock = None
 
     def onSceneClose(self, *_):
-        saved = self.flushSave()
+        saved = self.prepareLeave()
+        self.features.clear(preserve=not saved)
         self.markups.clear()
         self.volume = None
         if saved:
@@ -287,23 +305,36 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
                 self.showError("打开失败：" + str(exc))
 
     def openDirectory(self, source, projectDirectory=None, reader=None):
-        self.markups.finish()
-        if not self.flushSave():
+        if not self.prepareLeave():
             return False
         source = Path(source).resolve()
         cases, skipped = scan_cases(source)
         if projectDirectory is None:
             key = hashlib.sha256(str(source).encode()).hexdigest()[:16]
             projectDirectory = self.dataRoot / "projects" / key
+        projectDirectory = Path(projectDirectory).resolve()
+        projectDirectory.mkdir(parents=True, exist_ok=True)
+        same_project = self.store is not None and self.store.directory == projectDirectory
+        project_lock = self.projectLock if same_project else qt.QLockFile(str(projectDirectory / "reader.lock"))
+        project_lock.setStaleLockTime(0)
+        if not same_project and not project_lock.tryLock(100):
+            raise ValueError("这个标注项目正由另一个窗口使用，请先关闭那个窗口。")
         new_store = AnnotationStore(projectDirectory)
         try:
             new_store.import_cases(cases)
+            recovered = new_store.recover_audio()
             new_reader = validate_reader(reader or new_store.preference("reader", "reader-01"))
         except Exception:
             new_store.close()
+            if not same_project:
+                project_lock.unlock()
             raise
         if self.store:
             self.store.close()
+        if self.projectLock and not same_project:
+            self.projectLock.unlock()
+        self.projectLock = project_lock
+        self.features.clear()
         self.markups.clear()
         self.spatialState = []
         self.store, self.cases = new_store, cases
@@ -326,6 +357,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         if opened:
             self.dataRoot.mkdir(parents=True, exist_ok=True)
             atomic_write(self.dataRoot / "last-project.json", json.dumps({"source": str(source), "project": str(new_store.directory)}, ensure_ascii=False))
+            if recovered:
+                self.setSaveStatus(f"已恢复 {recovered} 段未关联的本地录音。")
         return opened
 
     def _loadVolume(self, case):
@@ -409,8 +442,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             return False
         if index == self.currentIndex:
             return True
-        self.markups.finish()
-        if not self.flushSave():
+        if not self.prepareLeave():
             self._resetCombo()
             return False
         try:
@@ -435,6 +467,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             else:
                 slicer.mrmlScene.RemoveNode(old_volume)
         self._populate()
+        self.features.restore()
         self.store.set_preference("last_case:" + self.currentReader, self.cases[index]["case_id"])
         self.updateControls()
         return True
@@ -589,7 +622,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             self.currentRecord = self.store.save(
                 self.cases[self.currentIndex]["case_id"], self.currentReader,
                 self._zonesFromUI(), self.noteEdit.toPlainText(), self.currentRecord["status"], self._captureDisplay(),
-                spatial_annotations=self.spatialState)
+                spatial_annotations=self.spatialState, **self.features.capture())
             self.dirty = False
             self.setSaveStatus(("已完成 · " if self.currentRecord["status"] == "complete" else "草稿 · ") + "已自动保存")
             self.updateControls()
@@ -600,6 +633,12 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             self.setSaveStatus("保存失败：" + str(exc) + " 当前输入仍保留，暂不能切换或关闭。", error=True)
             return False
 
+    def prepareLeave(self):
+        if not self.features.prepare_leave():
+            return False
+        self.markups.finish()
+        return self.flushSave()
+
     def changeReader(self):
         try:
             reader = validate_reader(self.readerEdit.text)
@@ -609,8 +648,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             return False
         if reader == self.currentReader:
             return True
-        self.markups.finish()
-        if not self.flushSave():
+        if not self.prepareLeave():
             self.readerEdit.setText(self.currentReader)
             return False
         self.currentReader = reader
@@ -619,6 +657,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             self._restoreSpatial()
             self.store.set_preference("reader", reader)
             self._populate()
+            self.features.restore()
             self.updateControls()
         return True
 
@@ -628,8 +667,13 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         try:
             validate_complete(self._zonesFromUI(), self.noteEdit.toPlainText())
             validate_spatial(self.spatialState, self.cases[self.currentIndex], complete=True)
+            values = self.features.capture()
+            validate_quality(values["quality"], complete=True)
+            validate_partition(values["partition"], self.cases[self.currentIndex], self.store.assets, complete=True)
         except ValueError as exc:
             self.showError(str(exc))
+            return False
+        if not self.features.prepare_leave():
             return False
         self.markups.finish()
         self.currentRecord["status"] = "complete"
@@ -642,19 +686,19 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         return True
 
     def chooseExport(self):
-        if self.store is None or not self.flushSave():
+        if self.store is None or not self.prepareLeave():
             return
         directory = qt.QFileDialog.getExistingDirectory(slicer.util.mainWindow(), "选择导出目录", str(self.store.directory))
         if directory:
             try:
                 paths = self.exportResults(directory)
-                self.setSaveStatus("已导出评分 CSV、点/区域坐标 CSV 和完整 JSON。")
+                self.setSaveStatus("已导出评分、质量、坐标、录音与分区文件。")
                 qt.QDesktopServices.openUrl(qt.QUrl.fromLocalFile(str(Path(paths[0]).parent)))
             except Exception as exc:
                 self.showError("导出失败：" + str(exc))
 
     def exportResults(self, directory):
-        if not self.flushSave():
+        if not self.prepareLeave():
             raise RuntimeError("保存失败，已停止导出。")
         return self.store.export(directory, [c["case_id"] for c in self.cases], self.currentReader)
 
@@ -685,6 +729,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.previousButton.setEnabled(active and self.currentIndex > 0)
         self.nextButton.setEnabled(active and self.currentIndex + 1 < len(self.cases))
         self.updateSpatialControls()
+        self.features.update_controls()
         if not active:
             return
         statuses = self.store.completion([c["case_id"] for c in self.cases], self.currentReader)
