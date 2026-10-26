@@ -26,6 +26,7 @@ from PneumoconiosisLib.markups import ImageMarkups
 from PneumoconiosisLib.features import CaseFeatures
 from PneumoconiosisLib.core import validate_quality
 from PneumoconiosisLib.partition import validate_partition
+from PneumoconiosisLib.radio_choices import RadioChoices
 
 
 class PneumoconiosisAnnotator(ScriptedLoadableModule):
@@ -148,25 +149,32 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.layout.addWidget(self.features.qualityWidget)
 
         ratings = qt.QGroupBox("六肺区评分")
+        self.ratingsWidget = ratings
         grid = qt.QGridLayout(ratings)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(10)
-        grid.addWidget(qt.QLabel("患者右肺"), 0, 0, 1, 2)
-        grid.addWidget(qt.QLabel("患者左肺"), 0, 2, 1, 2)
-        self.gradeCombos = {}
-        for row, (right, left) in enumerate(zip(ZONES[:3], ZONES[3:]), 1):
-            for column, zone in ((0, right), (2, left)):
-                grid.addWidget(qt.QLabel(ZONE_NAMES[zone]), row, column)
-                combo = qt.QComboBox()
-                combo.addItem("— 未评 —", "unread")
-                for grade in GRADES:
-                    combo.addItem(grade, grade)
-                combo.addItem("不可评价", "not_scorable")
-                combo.setMinimumWidth(105)
-                combo.setMaxVisibleItems(14)
-                combo.connect("currentIndexChanged(int)", self.ratingChanged)
-                self.gradeCombos[zone] = combo
-                grid.addWidget(combo, row, column + 1)
+        grid.setHorizontalSpacing(3)
+        grid.setVerticalSpacing(0)
+        grid.addWidget(qt.QLabel("小级"), 0, 0, 2, 1)
+        for column, label in ((1, "患者右肺"), (4, "患者左肺")):
+            heading = qt.QLabel(label)
+            heading.setAlignment(qt.Qt.AlignCenter)
+            grid.addWidget(heading, 0, column, 1, 3)
+        options = [("unread", "未评"), *((grade, grade) for grade in GRADES), ("not_scorable", "不可评价")]
+        for row, (_, label) in enumerate(options, 2):
+            grid.addWidget(qt.QLabel(label), row, 0)
+        self.gradeChoices = {}
+        for column, zone in enumerate(ZONES, 1):
+            heading = qt.QLabel(ZONE_NAMES[zone])
+            heading.setAlignment(qt.Qt.AlignCenter)
+            grid.addWidget(heading, 1, column)
+            choices = RadioChoices(ratings, [(value, "") for value, _ in options], self.ratingChanged)
+            self.gradeChoices[zone] = choices
+            for row, (value, label) in enumerate(options, 2):
+                button = choices.buttons[value]
+                button.setMinimumSize(30, 22)
+                button.setAccessibleName(f"{ZONE_NAMES[zone]} · {label}")
+                button.setToolTip(f"{ZONE_NAMES[zone]} · {label}")
+                grid.addWidget(button, row, column, qt.Qt.AlignCenter)
+            grid.setColumnStretch(column, 1)
         self.layout.addWidget(ratings)
         self.layout.addWidget(self.features.partitionWidget)
 
@@ -479,10 +487,10 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def _populate(self):
         self.updating = True
-        for zone, combo in self.gradeCombos.items():
+        for zone, choices in self.gradeChoices.items():
             value = self.currentRecord["zones"][zone]
             token = value["grade"] if value["state"] == "scored" else value["state"]
-            combo.setCurrentIndex(combo.findData(token))
+            choices.set_value(token)
         self.noteEdit.setPlainText(self.currentRecord["note"])
         self.caseCombo.setCurrentIndex(self.currentIndex)
         self.updating = False
@@ -493,8 +501,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def _zonesFromUI(self):
         values = {}
-        for zone, combo in self.gradeCombos.items():
-            token = combo.currentData
+        for zone, choices in self.gradeChoices.items():
+            token = choices.value
             values[zone] = {"state": "scored" if token in GRADES else token, "grade": token if token in GRADES else None}
         return values
 
@@ -724,7 +732,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def updateControls(self):
         active = self.currentIndex >= 0 and self.volume is not None
-        for control in [self.exportButton, self.caseCombo, self.noteEdit, self.completeButton, self.fitButton, self.resetButton, *self.gradeCombos.values()]:
+        for control in [self.exportButton, self.caseCombo, self.noteEdit, self.completeButton, self.fitButton, self.resetButton, self.ratingsWidget]:
             control.setEnabled(active)
         self.previousButton.setEnabled(active and self.currentIndex > 0)
         self.nextButton.setEnabled(active and self.currentIndex + 1 < len(self.cases))

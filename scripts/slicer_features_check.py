@@ -79,8 +79,8 @@ try:
     from PneumoconiosisLib.core import file_sha256
     from PneumoconiosisLib.partition import zone_map
     first = w.cases[0]["case_id"]
-    check(f.qualityCombo.currentData is None, "whole-film quality starts unread without a fabricated grade")
-    f.qualityCombo.setCurrentIndex(f.qualityCombo.findData(3))
+    check(f.qualityChoices.value is None, "whole-film quality starts unread without a fabricated grade")
+    f.qualityChoices.buttons[3].click()
     f.qualityReason.setText("仅 QA：质量字段保存测试")
     events(.65)
     check(w.store.get(first, "qa-features")["quality"] == {"grade": 3, "reason": "仅 QA：质量字段保存测试"}, "real quality widgets automatically save grade and defect reason")
@@ -149,7 +149,7 @@ try:
 
     w.readerEdit.setText("qa-features-other")
     check(w.changeReader(), "switch reader with independent feature records")
-    check(f.qualityCombo.currentData is None and not f.audio, "quality and audio remain independent for another reader")
+    check(f.qualityChoices.value is None and not f.audio, "quality and audio remain independent for another reader")
     check(f.partition.state["state"] == "pending_review" and f.partition.state["masks"] == before["baseline"], "another reader sees the machine baseline and no other clinician's corrections or confirmation")
     w.readerEdit.setText("qa-features")
     check(w.changeReader() and w.currentRecord["partition"]["state"] == "confirmed", "returning reader restores their own confirmed correction")

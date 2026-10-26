@@ -40,26 +40,46 @@ def run():
         for suffix in ("", "-wal", "-shm"):
             (qa_store / ("annotations.sqlite3" + suffix)).unlink(missing_ok=True)
         w.dataRoot = OUT / "settings"
+        check(all(not button.isEnabled() for choices in w.gradeChoices.values() for button in choices.buttons.values()),
+              "rating radio buttons stay disabled until a case is loaded")
         check(w.openDirectory(ROOT.parent / "2023Sample", qa_store, "qa-reader"), "open current DICOM samples")
         check(len(w.cases) == 11, "11 eligible single-frame DX cases")
         hashes = {c["case_id"]: c["source_sha256"] for c in w.cases}
         check(w._zonesFromUI() == empty_zones(), "initial ratings are unread, never auto-filled")
-        # All twelve valid grades pass through real QComboBox signals into persistence.
+        check(all(len(choices.buttons) == 14 for choices in w.gradeChoices.values()),
+              "each lung zone exposes twelve grades plus unread and non-scorable radio choices")
+        check(w.features.qualityChoices.value is None and len(w.features.qualityChoices.buttons) == 5,
+              "quality exposes all four grades and unread as radio choices")
+        # All twelve valid grades pass through native radio-button signals into persistence.
         for i, zone in enumerate(ZONES):
-            combo = w.gradeCombos[zone]
-            combo.setCurrentIndex(combo.findData(GRADES[i]))
+            w.gradeChoices[zone].buttons[GRADES[i]].click()
+        check(all(sum(button.isChecked() for button in choices.buttons.values()) == 1 for choices in w.gradeChoices.values()),
+              "the six radio columns remain independently exclusive")
         w.noteEdit.setPlainText("仅 QA：自动保存与恢复测试")
         events(0.65)
         first_id = w.cases[0]["case_id"]
-        w.features.qualityCombo.setCurrentIndex(w.features.qualityCombo.findData(1))
+        for grade in (1, 2, 3, 4, None, 1):
+            w.features.qualityChoices.buttons[grade].click()
+            assert w.features.qualityChoices.value == grade
+            assert sum(button.isChecked() for button in w.features.qualityChoices.buttons.values()) == 1
+        events(.65)
+        check(w.store.get(first_id, "qa-reader")["quality"]["grade"] == 1,
+              "quality radio choices, including clearing back to unread, autosave without changing the six ratings")
         saved = w.store.get(first_id, "qa-reader")
         check(saved["note"].startswith("仅 QA"), "debounced note autosaves without a save button")
         first_zones = w._zonesFromUI()
         check(saved["zones"] == first_zones, "grade changes autosave immediately")
         check(w.completeCase() and w.currentIndex == 1, "complete persists and switches to next case")
+        check(w.features.qualityChoices.value is None, "case switching restores unread quality without inheriting the previous selection")
         for i, zone in enumerate(ZONES):
-            combo = w.gradeCombos[zone]
-            combo.setCurrentIndex(combo.findData(GRADES[i + 6]))
+            w.gradeChoices[zone].buttons[GRADES[i + 6]].click()
+        second_zones = w._zonesFromUI()
+        w.gradeChoices["LL"].buttons["unread"].click()
+        check(w._zonesFromUI()["LL"]["state"] == "unread"
+              and all(w._zonesFromUI()[zone] == second_zones[zone] for zone in ZONES if zone != "LL")
+              and w.store.get(w.cases[1]["case_id"], "qa-reader")["zones"]["LL"]["state"] == "unread",
+              "a zone can be cleared back to unread and autosaved without clearing another zone")
+        w.gradeChoices["LL"].buttons[GRADES[-1]].click()
         check(w.flushSave(), "all twelve small grades accepted in actual Slicer UI")
         check(w.selectCase(0) and w._zonesFromUI() == first_zones, "switch back restores exact six-zone ratings")
         check(w.store.get(first_id, "qa-reader")["status"] == "complete", "completion status survives navigation")
@@ -76,10 +96,10 @@ def run():
         check(w.flushSave(), "retry recovers buffered input after storage failure")
         # Non-scorable is explicitly different from zero and requires a reason at completion.
         w.selectCase(2)
-        w.features.qualityCombo.setCurrentIndex(w.features.qualityCombo.findData(1))
+        w.features.qualityChoices.buttons[1].click()
         for zone in ZONES:
-            w.gradeCombos[zone].setCurrentIndex(w.gradeCombos[zone].findData("0/0"))
-        w.gradeCombos["RU"].setCurrentIndex(w.gradeCombos["RU"].findData("not_scorable"))
+            w.gradeChoices[zone].buttons["0/0"].click()
+        w.gradeChoices["RU"].buttons["not_scorable"].click()
         check(not w.completeCase(), "not-scorable completion requires a reason")
         w.noteEdit.setPlainText("仅 QA：右上遮挡，其余肺区可评")
         check(w.completeCase(), "not-scorable status and reason can be completed")

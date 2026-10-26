@@ -32,7 +32,7 @@ def start():
         status = {"ready": widget.currentIndex >= 0, "case_count": len(widget.cases),
                   "slicer": slicer.app.applicationVersion, "current_reader": widget.currentReader,
                   "spatial_tools_ready": widget.pointButton.isEnabled() and widget.regionButton.isEnabled(),
-                  "quality_control_ready": widget.features.qualityCombo.isEnabled(),
+                  "quality_control_ready": widget.features.qualityWidget.isEnabled(),
                   "audio_control_ready": widget.features.recordButton.isEnabled(),
                   "partition_state": widget.features.partition.state["state"] if widget.features.partition.state else None,
                   "visible_zone_count": widget.features.partition.overlay.GetSegmentation().GetNumberOfSegments() if widget.features.partition.overlay else 0}

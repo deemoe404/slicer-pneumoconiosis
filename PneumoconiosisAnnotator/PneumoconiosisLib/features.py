@@ -15,6 +15,7 @@ from .core import QUALITY_GRADES, utc_now
 from .partition import validate_partition
 from .partition_view import ImagePartition
 from .workers import Worker
+from .radio_choices import RadioChoices
 
 
 class CaseFeatures:
@@ -31,12 +32,15 @@ class CaseFeatures:
         self.qualityWidget = qt.QGroupBox("整片质量")
         layout = qt.QVBoxLayout(self.qualityWidget)
         layout.setSpacing(3)
-        self.qualityCombo = qt.QComboBox()
-        self.qualityCombo.addItem("— 未评 —", None)
-        for grade, name in QUALITY_GRADES.items():
-            self.qualityCombo.addItem(f"{grade} 级 · {name}", grade)
-        self.qualityCombo.connect("currentIndexChanged(int)", self.changed)
-        layout.addWidget(self.qualityCombo)
+        options = [(None, "未评"), *((grade, f"{grade} {name}") for grade, name in QUALITY_GRADES.items())]
+        self.qualityChoices = RadioChoices(self.qualityWidget, options, self.changed)
+        row = qt.QHBoxLayout()
+        row.setSpacing(4)
+        for value, label in options:
+            button = self.qualityChoices.buttons[value]
+            button.setAccessibleName("整片质量 · " + label)
+            row.addWidget(button)
+        layout.addLayout(row)
         self.qualityReason = qt.QLineEdit()
         self.qualityReason.setPlaceholderText("质量缺陷原因（差片 / 废片必填）")
         self.qualityReason.setMaxLength(2000)
@@ -119,7 +123,7 @@ class CaseFeatures:
             if cached and cached["source_sha256"] == self.w.cases[self.w.currentIndex]["source_sha256"]:
                 self.partition_state = copy.deepcopy(cached)
         try:
-            self.qualityCombo.setCurrentIndex(self.qualityCombo.findData(record["quality"]["grade"]))
+            self.qualityChoices.set_value(record["quality"]["grade"])
             self.qualityReason.setText(record["quality"]["reason"])
             self.audio = copy.deepcopy(record["audio"])
             self.editPointsButton.setChecked(False)
@@ -139,7 +143,7 @@ class CaseFeatures:
     def capture(self):
         if self.partition.state is not None:
             self.partition_state = self.partition.capture()
-        return {"quality": {"grade": self.qualityCombo.currentData, "reason": self.qualityReason.text},
+        return {"quality": {"grade": self.qualityChoices.value, "reason": self.qualityReason.text},
                 "partition": self.partition_state, "audio": self.audio}
 
     def prepare_leave(self):
@@ -387,7 +391,7 @@ class CaseFeatures:
         editable = self.partition.state is not None
         recording = self.audio_worker is not None and self.audio_worker.process.state() != qt.QProcess.NotRunning
         playing = self.player is not None and self.player.process.state() != qt.QProcess.NotRunning
-        for control in (self.qualityCombo, self.qualityReason, self.recordButton):
+        for control in (self.qualityWidget, self.recordButton):
             control.setEnabled(active)
         self.autoButton.setEnabled(active and not present and not self.jobs)
         self.editLungsButton.setEnabled(active and editable)

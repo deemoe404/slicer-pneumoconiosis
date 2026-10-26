@@ -72,9 +72,9 @@ try:
 
     w.selectCase(1)
     original = copy.deepcopy(w.currentRecord)
-    f.qualityCombo.setCurrentIndex(f.qualityCombo.findData(1))
-    for combo in w.gradeCombos.values():
-        combo.setCurrentIndex(combo.findData("0/0"))
+    f.qualityChoices.buttons[1].click()
+    for choices in w.gradeChoices.values():
+        choices.buttons["0/0"].click()
     check(not w.completeCase() and w.currentIndex == 1, "completion rejects an unconfirmed automatic partition even when quality and all six ratings are filled")
     check(f.confirm_partition() and w.completeCase() and w.currentIndex == 2, "confirmed partition, quality and six ratings can complete and advance together")
     put_record(original)
