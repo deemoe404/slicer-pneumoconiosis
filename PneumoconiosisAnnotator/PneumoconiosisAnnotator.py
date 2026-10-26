@@ -140,11 +140,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         nav.addWidget(self.nextButton)
         self.layout.addLayout(nav)
 
-        self.orientationLabel = qt.QLabel()
-        self.orientationLabel.setWordWrap(True)
-        self.orientationLabel.setStyleSheet("color:#c79238; font-size:11px; margin:6px 0;")
-        self.layout.addWidget(self.orientationLabel)
-
         self.features = CaseFeatures(self, ROOT)
         self.layout.addWidget(self.features.qualityWidget)
 
@@ -344,8 +339,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         last_id = new_store.preference("last_case:" + new_reader)
         index = next((i for i, case in enumerate(cases) if case["case_id"] == last_id), 0)
         opened = self.selectCase(index)
-        if skipped:
-            self.orientationLabel.setText(self.orientationLabel.text + f"\n跳过 {skipped} 个非目标或重复文件。")
+        self.progressLabel.setToolTip(f"扫描时跳过 {skipped} 个非目标或重复文件。" if skipped else "")
         if opened:
             self.dataRoot.mkdir(parents=True, exist_ok=True)
             atomic_write(self.dataRoot / "last-project.json", json.dumps({"source": str(source), "project": str(new_store.directory)}, ensure_ascii=False))
@@ -479,8 +473,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.caseCombo.setCurrentIndex(self.currentIndex)
         self.updating = False
         self.dirty = False
-        known = self.cases[self.currentIndex]["orientation_known"]
-        self.orientationLabel.setText("" if known else "方向信息不完整：按原始图像方向显示，请核对片内侧别标记。")
         self.setSaveStatus("已完成 · 已保存" if self.currentRecord["status"] == "complete" else ("草稿已恢复" if self.currentRecord["updated_at"] else "未评 · 修改后自动保存"))
 
     def _zonesFromUI(self):

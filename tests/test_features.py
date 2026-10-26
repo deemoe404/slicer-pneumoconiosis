@@ -60,14 +60,15 @@ class FeatureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_quality({"grade": invalid})
 
-    def test_completion_requires_quality_and_poor_quality_reason(self):
+    def test_completion_requires_quality_but_no_defect_reason(self):
         with self.assertRaisesRegex(ValueError, "整片质量"):
             self.store.save("CXR-0", "r", self.scored, "", "complete")
-        for grade in (3, 4):
-            with self.assertRaisesRegex(ValueError, "质量缺陷"):
-                self.store.save("CXR-0", "r", self.scored, "", "complete", quality={"grade": grade, "reason": ""})
+        for grade in range(1, 5):
+            record = self.store.save("CXR-0", "r", self.scored, "", "complete", quality={"grade": grade, "reason": ""})
+            self.assertEqual(record["status"], "complete")
+            self.assertEqual(record["quality"], {"grade": grade, "reason": ""})
         record = self.store.save("CXR-0", "r", self.scored, "", "complete", quality={"grade": 3, "reason": "吸气不足"})
-        self.assertEqual(record["status"], "complete")
+        self.assertEqual(record["quality"]["reason"], "吸气不足")
 
     def test_six_zones_use_apex_to_dome_and_cover_exactly_the_lung_masks(self):
         labels = zone_map(self.right, self.left, self.landmarks)

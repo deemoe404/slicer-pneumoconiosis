@@ -132,13 +132,13 @@ def run():
         check(w.flushSave(), "retry recovers buffered input after storage failure")
         # Non-scorable is explicitly different from zero and requires a reason at completion.
         w.selectCase(2)
-        w.features.qualityChoices.buttons[1].click()
+        w.features.qualityChoices.buttons[4].click()
         for zone in ZONES:
             rate(w, zone, "0/0")
         w.gradeSliders["RU"].notScorableButton.click()
         check(not w.completeCase(), "not-scorable completion requires a reason")
         w.noteEdit.setPlainText("仅 QA：右上遮挡，其余肺区可评")
-        check(w.completeCase(), "not-scorable status and reason can be completed")
+        check(w.completeCase(), "non-scorable status and its note can complete with quality grade four and no defect reason")
         for index in range(len(w.cases)):
             check(w.selectCase(index), f"native DICOM reader loads sample {index + 1:02d}")
             check(list(w.volume.GetImageData().GetDimensions()) == [w.cases[index]["columns"], w.cases[index]["rows"], 1], f"sample {index + 1:02d} retains original pixel dimensions")

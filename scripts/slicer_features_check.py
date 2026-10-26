@@ -81,9 +81,8 @@ try:
     first = w.cases[0]["case_id"]
     check(f.qualityChoices.value is None, "whole-film quality starts unread without a fabricated grade")
     f.qualityChoices.buttons[3].click()
-    f.qualityReason.setText("仅 QA：质量字段保存测试")
     events(.65)
-    check(w.store.get(first, "qa-features")["quality"] == {"grade": 3, "reason": "仅 QA：质量字段保存测试"}, "real quality widgets automatically save grade and defect reason")
+    check(w.store.get(first, "qa-features")["quality"] == {"grade": 3, "reason": ""}, "quality radio buttons automatically save a poor-quality grade without requiring a defect reason")
 
     f.recordButton.click()
     wait_for(lambda: f.recording_started is not None or f.last_audio_error is not None, 15)
@@ -173,7 +172,7 @@ try:
     check(all(file_sha256(c["file_path"]) == c["source_sha256"] for c in w.cases), "all 11 original DICOM files remain unchanged")
     w.selectCase(0)
     w.store.connection.executescript("CREATE TEMP TRIGGER reject_feature BEFORE INSERT ON annotations BEGIN SELECT RAISE(ABORT, 'QA feature write failure'); END;")
-    f.qualityReason.setText("仅 QA：失败后保留质量与附件")
+    f.qualityChoices.buttons[4].click()
     check(not w.selectCase(1) and w.currentIndex == 0, "attachment/quality write failure blocks navigation and retains the current native geometry")
     close = qt.QCloseEvent()
     check(w.closeGuard.eventFilter(window, close) and not close.isAccepted(), "feature save failure blocks normal application close")

@@ -41,11 +41,6 @@ class CaseFeatures:
             button.setAccessibleName("整片质量 · " + label)
             row.addWidget(button)
         layout.addLayout(row)
-        self.qualityReason = qt.QLineEdit()
-        self.qualityReason.setPlaceholderText("质量缺陷原因（差片 / 废片必填）")
-        self.qualityReason.setMaxLength(2000)
-        self.qualityReason.connect("textChanged(QString)", self.changed)
-        layout.addWidget(self.qualityReason)
 
         self.partitionWidget = qt.QGroupBox("肺野与六区")
         layout = qt.QVBoxLayout(self.partitionWidget)
@@ -124,7 +119,6 @@ class CaseFeatures:
                 self.partition_state = copy.deepcopy(cached)
         try:
             self.qualityChoices.set_value(record["quality"]["grade"])
-            self.qualityReason.setText(record["quality"]["reason"])
             self.audio = copy.deepcopy(record["audio"])
             self.editPointsButton.setChecked(False)
             self.partition.restore(self.w.volume, self.partition_state, self.w.store.assets)
@@ -143,7 +137,7 @@ class CaseFeatures:
     def capture(self):
         if self.partition.state is not None:
             self.partition_state = self.partition.capture()
-        return {"quality": {"grade": self.qualityChoices.value, "reason": self.qualityReason.text},
+        return {"quality": {**self.w.currentRecord["quality"], "grade": self.qualityChoices.value},
                 "partition": self.partition_state, "audio": self.audio}
 
     def prepare_leave(self):

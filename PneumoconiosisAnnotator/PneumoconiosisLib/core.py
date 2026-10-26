@@ -75,8 +75,6 @@ def validate_quality(quality, complete=False):
         raise ValueError("质量缺陷说明最多 2000 字。")
     if complete and grade is None:
         raise ValueError("整片质量尚未评价。")
-    if complete and grade in (3, 4) and not reason:
-        raise ValueError("请说明差片 / 废片的质量缺陷。")
     return {"grade": grade, "reason": reason}
 
 
