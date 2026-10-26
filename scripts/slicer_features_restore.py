@@ -73,8 +73,9 @@ try:
     w.selectCase(1)
     original = copy.deepcopy(w.currentRecord)
     f.qualityChoices.buttons[1].click()
-    for choices in w.gradeChoices.values():
-        choices.buttons["0/0"].click()
+    for control in w.gradeSliders.values():
+        control.slider.setSliderPosition(1)  # 0/0 is the second of the twelve grades.
+        control.slider.triggerAction(qt.QAbstractSlider.SliderMove)
     check(not w.completeCase() and w.currentIndex == 1, "completion rejects an unconfirmed automatic partition even when quality and all six ratings are filled")
     check(f.confirm_partition() and w.completeCase() and w.currentIndex == 2, "confirmed partition, quality and six ratings can complete and advance together")
     put_record(original)

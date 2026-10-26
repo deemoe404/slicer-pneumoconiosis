@@ -31,6 +31,21 @@ def events(seconds=0.1):
         time.sleep(0.01)
 
 
+def mouse(slider, event_type, step):
+    handle = slider.style().pixelMetric(qt.QStyle.PM_SliderLength)
+    point = qt.QPoint(round(handle / 2 + (slider.width - handle) * step / 11), slider.height // 2)
+    held = qt.Qt.NoButton if event_type == qt.QEvent.MouseButtonRelease else qt.Qt.LeftButton
+    button = qt.Qt.NoButton if event_type == qt.QEvent.MouseMove else qt.Qt.LeftButton
+    event = qt.QMouseEvent(event_type, qt.QPointF(point), qt.QPointF(slider.mapToGlobal(point)), button, held, qt.Qt.NoModifier)
+    slicer.app.sendEvent(slider, event)
+
+
+def rate(widget, zone, grade):
+    slider = widget.gradeSliders[zone].slider
+    slider.setSliderPosition(GRADES.index(grade))
+    slider.triggerAction(qt.QAbstractSlider.SliderMove)
+
+
 def run():
     try:
         slicer.util.selectModule("PneumoconiosisAnnotator")
@@ -40,21 +55,42 @@ def run():
         for suffix in ("", "-wal", "-shm"):
             (qa_store / ("annotations.sqlite3" + suffix)).unlink(missing_ok=True)
         w.dataRoot = OUT / "settings"
-        check(all(not button.isEnabled() for choices in w.gradeChoices.values() for button in choices.buttons.values()),
-              "rating radio buttons stay disabled until a case is loaded")
+        check(all(not control.slider.isEnabled() for control in w.gradeSliders.values()),
+              "rating sliders stay disabled until a case is loaded")
         check(w.openDirectory(ROOT.parent / "2023Sample", qa_store, "qa-reader"), "open current DICOM samples")
         check(len(w.cases) == 11, "11 eligible single-frame DX cases")
         hashes = {c["case_id"]: c["source_sha256"] for c in w.cases}
         check(w._zonesFromUI() == empty_zones(), "initial ratings are unread, never auto-filled")
-        check(all(len(choices.buttons) == 14 for choices in w.gradeChoices.values()),
-              "each lung zone exposes twelve grades plus unread and non-scorable radio choices")
+        check(all(control.slider.minimum == 0 and control.slider.maximum == 11 and control.slider.singleStep == 1
+                  for control in w.gradeSliders.values()), "each lung zone has exactly twelve discrete slider grades")
         check(w.features.qualityChoices.value is None and len(w.features.qualityChoices.buttons) == 5,
               "quality exposes all four grades and unread as radio choices")
-        # All twelve valid grades pass through native radio-button signals into persistence.
+        events(.2)
+        check([label.text for label in w.gradeRuler.labels] == list(GRADES)
+              and all(a.geometry.right() < b.geometry.left() for a, b in zip(w.gradeRuler.labels, w.gradeRuler.labels[1:])),
+              "the shared ruler displays all twelve small-grade labels without overlap")
+        control = w.gradeSliders["RU"]
+        mouse(control.slider, qt.QEvent.MouseButtonPress, 0)
+        mouse(control.slider, qt.QEvent.MouseButtonRelease, 0)
+        check(w._zonesFromUI()["RU"]["grade"] == "0/-", "clicking the unmoved first slider handle explicitly records the lowest grade")
+        key = qt.QKeyEvent(qt.QEvent.KeyPress, qt.Qt.Key_Right, qt.Qt.NoModifier)
+        slicer.app.sendEvent(control.slider, key)
+        check(w._zonesFromUI()["RU"]["grade"] == "0/0", "native keyboard arrows select the adjacent small grade")
+        wheel = qt.QWheelEvent(qt.QPointF(10, 10), qt.QPointF(10, 10), qt.QPoint(0, 0), qt.QPoint(0, 120),
+                              qt.Qt.NoButton, qt.Qt.NoModifier, qt.Qt.NoScrollPhase, False)
+        slicer.app.sendEvent(control.slider, wheel)
+        check(control.value == "0/0" and control.slider.value == 1, "scrolling over a slider cannot accidentally change a grade")
+        control.unreadButton.click()
+        mouse(control.slider, qt.QEvent.MouseButtonPress, 0)
+        mouse(control.slider, qt.QEvent.MouseMove, 11)
+        check(control.value == "unread" and control.valueLabel.text == "3/+", "dragging previews the exact grade without writing intermediate ratings")
+        mouse(control.slider, qt.QEvent.MouseButtonRelease, 11)
+        check(control.value == "3/+" and w.store.get(w.cases[0]["case_id"], "qa-reader")["zones"]["RU"]["grade"] == "3/+",
+              "releasing a native mouse drag saves the selected slider grade immediately")
+        # All twelve valid grades pass through native slider signals into persistence.
         for i, zone in enumerate(ZONES):
-            w.gradeChoices[zone].buttons[GRADES[i]].click()
-        check(all(sum(button.isChecked() for button in choices.buttons.values()) == 1 for choices in w.gradeChoices.values()),
-              "the six radio columns remain independently exclusive")
+            rate(w, zone, GRADES[i])
+        check([w.gradeSliders[zone].value for zone in ZONES] == list(GRADES[:6]), "the six lung-zone sliders remain independent")
         w.noteEdit.setPlainText("仅 QA：自动保存与恢复测试")
         events(0.65)
         first_id = w.cases[0]["case_id"]
@@ -72,14 +108,14 @@ def run():
         check(w.completeCase() and w.currentIndex == 1, "complete persists and switches to next case")
         check(w.features.qualityChoices.value is None, "case switching restores unread quality without inheriting the previous selection")
         for i, zone in enumerate(ZONES):
-            w.gradeChoices[zone].buttons[GRADES[i + 6]].click()
+            rate(w, zone, GRADES[i + 6])
         second_zones = w._zonesFromUI()
-        w.gradeChoices["LL"].buttons["unread"].click()
+        w.gradeSliders["LL"].unreadButton.click()
         check(w._zonesFromUI()["LL"]["state"] == "unread"
               and all(w._zonesFromUI()[zone] == second_zones[zone] for zone in ZONES if zone != "LL")
               and w.store.get(w.cases[1]["case_id"], "qa-reader")["zones"]["LL"]["state"] == "unread",
               "a zone can be cleared back to unread and autosaved without clearing another zone")
-        w.gradeChoices["LL"].buttons[GRADES[-1]].click()
+        rate(w, "LL", GRADES[-1])
         check(w.flushSave(), "all twelve small grades accepted in actual Slicer UI")
         check(w.selectCase(0) and w._zonesFromUI() == first_zones, "switch back restores exact six-zone ratings")
         check(w.store.get(first_id, "qa-reader")["status"] == "complete", "completion status survives navigation")
@@ -98,8 +134,8 @@ def run():
         w.selectCase(2)
         w.features.qualityChoices.buttons[1].click()
         for zone in ZONES:
-            w.gradeChoices[zone].buttons["0/0"].click()
-        w.gradeChoices["RU"].buttons["not_scorable"].click()
+            rate(w, zone, "0/0")
+        w.gradeSliders["RU"].notScorableButton.click()
         check(not w.completeCase(), "not-scorable completion requires a reason")
         w.noteEdit.setPlainText("仅 QA：右上遮挡，其余肺区可评")
         check(w.completeCase(), "not-scorable status and reason can be completed")
@@ -127,6 +163,7 @@ def run():
         w.fitImage()
         events(0.2)
         check(window.grab().save(str(OUT / "module-preview.png")), "capture native Slicer module preview")
+        check(w.ratingsWidget.grab().save(str(OUT / "slider-preview.png")), "capture the compact six-slider panel")
         REPORT["success"] = True
     except Exception:
         REPORT["success"] = False

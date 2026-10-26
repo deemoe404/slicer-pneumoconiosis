@@ -26,7 +26,7 @@ from PneumoconiosisLib.markups import ImageMarkups
 from PneumoconiosisLib.features import CaseFeatures
 from PneumoconiosisLib.core import validate_quality
 from PneumoconiosisLib.partition import validate_partition
-from PneumoconiosisLib.radio_choices import RadioChoices
+from PneumoconiosisLib.grade_slider import GradeRuler, GradeSlider
 
 
 class PneumoconiosisAnnotator(ScriptedLoadableModule):
@@ -150,31 +150,15 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
         ratings = qt.QGroupBox("六肺区评分")
         self.ratingsWidget = ratings
-        grid = qt.QGridLayout(ratings)
-        grid.setHorizontalSpacing(3)
-        grid.setVerticalSpacing(0)
-        grid.addWidget(qt.QLabel("小级"), 0, 0, 2, 1)
-        for column, label in ((1, "患者右肺"), (4, "患者左肺")):
-            heading = qt.QLabel(label)
-            heading.setAlignment(qt.Qt.AlignCenter)
-            grid.addWidget(heading, 0, column, 1, 3)
-        options = [("unread", "未评"), *((grade, grade) for grade in GRADES), ("not_scorable", "不可评价")]
-        for row, (_, label) in enumerate(options, 2):
-            grid.addWidget(qt.QLabel(label), row, 0)
-        self.gradeChoices = {}
-        for column, zone in enumerate(ZONES, 1):
-            heading = qt.QLabel(ZONE_NAMES[zone])
-            heading.setAlignment(qt.Qt.AlignCenter)
-            grid.addWidget(heading, 1, column)
-            choices = RadioChoices(ratings, [(value, "") for value, _ in options], self.ratingChanged)
-            self.gradeChoices[zone] = choices
-            for row, (value, label) in enumerate(options, 2):
-                button = choices.buttons[value]
-                button.setMinimumSize(30, 22)
-                button.setAccessibleName(f"{ZONE_NAMES[zone]} · {label}")
-                button.setToolTip(f"{ZONE_NAMES[zone]} · {label}")
-                grid.addWidget(button, row, column, qt.Qt.AlignCenter)
-            grid.setColumnStretch(column, 1)
+        ratings_layout = qt.QVBoxLayout(ratings)
+        ratings_layout.setSpacing(3)
+        self.gradeSliders = {}
+        for zone in ZONES:
+            control = GradeSlider(ZONE_NAMES[zone], self.ratingChanged, ratings)
+            self.gradeSliders[zone] = control
+            ratings_layout.addWidget(control)
+        self.gradeRuler = GradeRuler(self.gradeSliders[ZONES[0]].slider, ratings)
+        ratings_layout.insertWidget(0, self.gradeRuler)
         self.layout.addWidget(ratings)
         self.layout.addWidget(self.features.partitionWidget)
 
@@ -487,10 +471,10 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def _populate(self):
         self.updating = True
-        for zone, choices in self.gradeChoices.items():
+        for zone, control in self.gradeSliders.items():
             value = self.currentRecord["zones"][zone]
             token = value["grade"] if value["state"] == "scored" else value["state"]
-            choices.set_value(token)
+            control.set_value(token)
         self.noteEdit.setPlainText(self.currentRecord["note"])
         self.caseCombo.setCurrentIndex(self.currentIndex)
         self.updating = False
@@ -501,8 +485,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def _zonesFromUI(self):
         values = {}
-        for zone, choices in self.gradeChoices.items():
-            token = choices.value
+        for zone, control in self.gradeSliders.items():
+            token = control.value
             values[zone] = {"state": "scored" if token in GRADES else token, "grade": token if token in GRADES else None}
         return values
 
