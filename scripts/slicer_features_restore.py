@@ -39,7 +39,7 @@ try:
     slicer.util.selectModule("PneumoconiosisAnnotator")
     w = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
     w.dataRoot = OUT / "features-settings"
-    check(w.openDirectory(ROOT.parent / "2023Sample", previous["project_directory"], "qa-features"), "fresh Slicer process reopens the isolated feature project")
+    check(w.openDirectory(ROOT.parent / "2023Sample", previous["project_directory"], "reader-01"), "fresh Slicer process reopens the isolated feature project")
     w.selectCase(0)
     f = w.features
     expected = previous["expected_first"]

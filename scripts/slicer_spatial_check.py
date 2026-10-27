@@ -55,7 +55,7 @@ try:
     for suffix in ("", "-wal", "-shm"):
         (project / ("annotations.sqlite3" + suffix)).unlink(missing_ok=True)
     w.dataRoot = OUT / "spatial-settings"
-    check(w.openDirectory(ROOT.parent / "2023Sample", project, "qa-spatial"), "open existing DX samples in an isolated spatial QA project")
+    check(w.openDirectory(ROOT.parent / "2023Sample", project, "reader-01"), "open existing DX samples in an isolated spatial QA project")
     window = slicer.util.mainWindow()
     window.resize(1400, 1000)
     slicer.util.setToolbarsVisible(False)
@@ -71,7 +71,7 @@ try:
     w.pointButton.click()
     mouse(w, [1600, 1100, 0])
     events(0.55)
-    point = w.store.get(first_id, "qa-spatial")["spatial_annotations"]
+    point = w.store.get(first_id, "reader-01")["spatial_annotations"]
     check(len(point) == 1 and point[0]["kind"] == "point", "native mouse click places one point and autosaves")
     point_id = point[0]["id"]
     check(max(abs(a - b) for a, b in zip(point[0]["points_ijk"][0], [1600, 1100, 0])) < 4,
@@ -79,36 +79,36 @@ try:
     check(w.markups.placing_id is None, "single point placement returns to normal interaction")
     mouse(w, point[0]["points_ijk"][0], end=[1700, 1200, 0])
     events(0.55)
-    moved = w.store.get(first_id, "qa-spatial")["spatial_annotations"][0]
+    moved = w.store.get(first_id, "reader-01")["spatial_annotations"][0]
     check(max(abs(a - b) for a, b in zip(moved["points_ijk"][0], [1700, 1200, 0])) < 4,
           "native mouse drag changes point position and autosaves")
     w.renameMarkup("QA_POINT")
     events(0.55)
-    check(w.store.get(first_id, "qa-spatial")["spatial_annotations"][0]["label"] == "QA_POINT", "renaming a point autosaves")
+    check(w.store.get(first_id, "reader-01")["spatial_annotations"][0]["label"] == "QA_POINT", "renaming a point autosaves")
     w.regionButton.click()
     for position in ([600, 650, 0], [1000, 650, 0], [1100, 1100, 0], [650, 1250, 0]):
         mouse(w, position)
     mouse(w, [650, 1250, 0], "Right")
     events(0.55)
-    records = w.store.get(first_id, "qa-spatial")["spatial_annotations"]
+    records = w.store.get(first_id, "reader-01")["spatial_annotations"]
     check(len(records) == 2 and records[1]["kind"] == "polygon" and records[1]["state"] == "ready",
           "native clicks create a closed polygon and right-click finishes it")
     check(len(records[1]["points_ijk"]) == 4, "cursor preview is excluded from persisted polygon vertices")
     region_id = records[1]["id"]
     w.renameMarkup("QA_REGION")
     events(0.55)
-    expected = w.store.get(first_id, "qa-spatial")["spatial_annotations"]
+    expected = w.store.get(first_id, "reader-01")["spatial_annotations"]
     check(w.selectCase(1) and w.markups.capture() == [], "switching case removes previous image's spatial nodes")
     check(w.selectCase(0) and len(w.markups.capture()) == 2, "switching back restores point and polygon")
     check(w.markups.capture()[0]["points_ijk"] == expected[0]["points_ijk"] and
           w.markups.capture()[1]["points_ijk"] == expected[1]["points_ijk"], "IJK to RAS round trip preserves coordinates after reloading DICOM")
-    w.readerEdit.setText("qa-spatial-other")
+    w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-02"))
     check(w.changeReader() and w.markups.capture() == [], "a different reader has independent spatial annotations")
-    w.readerEdit.setText("qa-spatial")
+    w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-01"))
     check(w.changeReader() and len(w.markups.capture()) == 2, "returning to reader restores spatial annotations")
     w.markups.select(region_id)
     w.deleteMarkupButton.click()
-    check(len(w.store.get(first_id, "qa-spatial")["spatial_annotations"]) == 1, "selected polygon deletion persists immediately")
+    check(len(w.store.get(first_id, "reader-01")["spatial_annotations"]) == 1, "selected polygon deletion persists immediately")
     # Keep an unfinished region as a resumable draft across case switching.
     w.regionButton.click()
     mouse(w, [650, 750, 0])

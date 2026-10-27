@@ -15,7 +15,7 @@ try:
     slicer.util.selectModule("PneumoconiosisAnnotator")
     w = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
     w.dataRoot = OUT / "spatial-settings"
-    assert w.openDirectory(ROOT.parent / "2023Sample", OUT / "spatial-store", "qa-spatial")
+    assert w.openDirectory(ROOT.parent / "2023Sample", OUT / "spatial-store", "reader-01")
     assert w.selectCase(0)
     expected = previous["expected"]
     assert w.currentRecord["spatial_annotations"] == expected
@@ -56,8 +56,8 @@ try:
     assert len(w.currentRecord["spatial_annotations"]) == 1
     report["checks"].append("native scene deletion cannot resurrect a removed region on autosave")
     # Restore the canonical QA fixture, including its audit trail, for later inspection.
-    w.store.save(w.cases[0]["case_id"], "qa-spatial", w._zonesFromUI(), w.noteEdit.toPlainText(), spatial_annotations=expected)
-    w.currentRecord = w.store.get(w.cases[0]["case_id"], "qa-spatial")
+    w.store.save(w.cases[0]["case_id"], "reader-01", w._zonesFromUI(), w.noteEdit.toPlainText(), spatial_annotations=expected)
+    w.currentRecord = w.store.get(w.cases[0]["case_id"], "reader-01")
     w._restoreSpatial()
     report["success"] = True
 except Exception:

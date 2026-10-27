@@ -57,7 +57,7 @@ def run():
         w.dataRoot = OUT / "settings"
         check(all(not control.slider.isEnabled() for control in w.gradeSliders.values()),
               "rating sliders stay disabled until a case is loaded")
-        check(w.openDirectory(ROOT.parent / "2023Sample", qa_store, "qa-reader"), "open current DICOM samples")
+        check(w.openDirectory(ROOT.parent / "2023Sample", qa_store, "reader-01"), "open current DICOM samples")
         check(len(w.cases) == 11, "11 eligible single-frame DX cases")
         hashes = {c["case_id"]: c["source_sha256"] for c in w.cases}
         check(w._zonesFromUI() == empty_zones(), "initial ratings are unread, never auto-filled")
@@ -85,7 +85,7 @@ def run():
         mouse(control.slider, qt.QEvent.MouseMove, 11)
         check(control.value == "unread" and control.valueLabel.text == "3/+", "dragging previews the exact grade without writing intermediate ratings")
         mouse(control.slider, qt.QEvent.MouseButtonRelease, 11)
-        check(control.value == "3/+" and w.store.get(w.cases[0]["case_id"], "qa-reader")["zones"]["RU"]["grade"] == "3/+",
+        check(control.value == "3/+" and w.store.get(w.cases[0]["case_id"], "reader-01")["zones"]["RU"]["grade"] == "3/+",
               "releasing a native mouse drag saves the selected slider grade immediately")
         # All twelve valid grades pass through native slider signals into persistence.
         for i, zone in enumerate(ZONES):
@@ -99,9 +99,9 @@ def run():
             assert w.features.qualityChoices.value == grade
             assert sum(button.isChecked() for button in w.features.qualityChoices.buttons.values()) == 1
         events(.65)
-        check(w.store.get(first_id, "qa-reader")["quality"]["grade"] == 1,
+        check(w.store.get(first_id, "reader-01")["quality"]["grade"] == 1,
               "quality radio choices, including clearing back to unread, autosave without changing the six ratings")
-        saved = w.store.get(first_id, "qa-reader")
+        saved = w.store.get(first_id, "reader-01")
         check(saved["note"].startswith("仅 QA"), "debounced note autosaves without a save button")
         first_zones = w._zonesFromUI()
         check(saved["zones"] == first_zones, "grade changes autosave immediately")
@@ -113,19 +113,22 @@ def run():
         w.gradeSliders["LL"].unreadButton.click()
         check(w._zonesFromUI()["LL"]["state"] == "unread"
               and all(w._zonesFromUI()[zone] == second_zones[zone] for zone in ZONES if zone != "LL")
-              and w.store.get(w.cases[1]["case_id"], "qa-reader")["zones"]["LL"]["state"] == "unread",
+              and w.store.get(w.cases[1]["case_id"], "reader-01")["zones"]["LL"]["state"] == "unread",
               "a zone can be cleared back to unread and autosaved without clearing another zone")
         rate(w, "LL", GRADES[-1])
         check(w.flushSave(), "all twelve small grades accepted in actual Slicer UI")
         check(w.selectCase(0) and w._zonesFromUI() == first_zones, "switch back restores exact six-zone ratings")
-        check(w.store.get(first_id, "qa-reader")["status"] == "complete", "completion status survives navigation")
-        w.readerEdit.setText("qa-second-reader")
+        check(w.store.get(first_id, "reader-01")["status"] == "complete", "completion status survives navigation")
+        w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-02"))
         check(w.changeReader() and w._zonesFromUI() == empty_zones(), "second reader starts with independent unread ratings")
-        w.readerEdit.setText("qa-reader")
+        w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-01"))
         check(w.changeReader() and w._zonesFromUI() == first_zones, "switching reader restores original record")
         w.store.connection.executescript("CREATE TEMP TRIGGER reject_save BEFORE INSERT ON annotations BEGIN SELECT RAISE(ABORT, 'QA forced save failure'); END;")
         w.noteEdit.setPlainText("仅 QA：模拟失败后保留输入")
         check(not w.selectCase(1) and w.currentIndex == 0, "save failure blocks case switch and retains current input")
+        w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-02"))
+        check(w.currentReader == "reader-01" and w.readerCombo.currentData == "reader-01",
+              "a failed save blocks reader switching and restores the original reader selection")
         close = qt.QCloseEvent()
         check(w.closeGuard.eventFilter(slicer.util.mainWindow(), close) and not close.isAccepted(), "save failure blocks application close")
         w.store.connection.execute("DROP TRIGGER reject_save")
@@ -151,7 +154,7 @@ def run():
         check(exported_grades == set(GRADES), "all twelve grades export losslessly")
         check(package["records"][2]["zones"]["RU"] == {"state": "not_scorable", "grade": None}, "non-scorable exports as null, never zero")
         # Return to an unread case for a clean UI preview without invented clinical grades.
-        w.readerEdit.setText("preview-unread")
+        w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-03"))
         w.changeReader()
         w.selectCase(0)
         window = slicer.util.mainWindow()

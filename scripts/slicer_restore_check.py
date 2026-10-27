@@ -13,7 +13,7 @@ try:
     slicer.util.selectModule("PneumoconiosisAnnotator")
     w = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
     w.dataRoot = OUT / "settings"
-    assert w.openDirectory(ROOT.parent / "2023Sample", OUT / "integration-store", "qa-reader")
+    assert w.openDirectory(ROOT.parent / "2023Sample", OUT / "integration-store", "reader-01")
     assert w.selectCase(0)
     first = {z: v["grade"] for z, v in w._zonesFromUI().items()}
     zone_order = ("RU", "RM", "RL", "LU", "LM", "LL")

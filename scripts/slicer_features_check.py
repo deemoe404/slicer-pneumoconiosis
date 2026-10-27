@@ -65,7 +65,7 @@ try:
     store = OUT / "features-store" / uuid.uuid4().hex
     REPORT["project_directory"] = str(store)
     w.dataRoot = OUT / "features-settings"
-    check(w.openDirectory(ROOT.parent / "2023Sample", store, "qa-features"), "open 11 existing DICOM samples with the new feature controls")
+    check(w.openDirectory(ROOT.parent / "2023Sample", store, "reader-01"), "open 11 existing DICOM samples with the new feature controls")
     f = w.features
     window = slicer.util.mainWindow()
     window.setWindowTitle("QA 仅功能测试 · 尘肺胸片标注")
@@ -82,14 +82,14 @@ try:
     check(f.qualityChoices.value is None, "whole-film quality starts unread without a fabricated grade")
     f.qualityChoices.buttons[3].click()
     events(.65)
-    check(w.store.get(first, "qa-features")["quality"] == {"grade": 3, "reason": ""}, "quality radio buttons automatically save a poor-quality grade without requiring a defect reason")
+    check(w.store.get(first, "reader-01")["quality"] == {"grade": 3, "reason": ""}, "quality radio buttons automatically save a poor-quality grade without requiring a defect reason")
 
     f.recordButton.click()
     wait_for(lambda: f.recording_started is not None or f.last_audio_error is not None, 15)
     check(f.recording_started is not None, "native Slicer control starts the real microphone worker")
     events(1.1)
     check(w.selectCase(1), "case switch stops and saves an ongoing recording before leaving")
-    audio = w.store.get(first, "qa-features")["audio"]
+    audio = w.store.get(first, "reader-01")["audio"]
     check(len(audio) == 1 and audio[0]["frames"] > 0, "actual microphone PCM is attached to the original case and reader")
     check(not f.audio, "next case does not inherit the previous recording")
     check(w.selectCase(0), "switch back restores the original audio and quality")
@@ -146,11 +146,11 @@ try:
     check(w.selectCase(1) and w.selectCase(0), "case navigation restores corrected partition geometry")
     check(w.currentRecord["partition"] == expected_first["partition"], "case switch restores exact mask hashes, landmarks and confirmation state")
 
-    w.readerEdit.setText("qa-features-other")
+    w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-02"))
     check(w.changeReader(), "switch reader with independent feature records")
     check(f.qualityChoices.value is None and not f.audio, "quality and audio remain independent for another reader")
     check(f.partition.state["state"] == "pending_review" and f.partition.state["masks"] == before["baseline"], "another reader sees the machine baseline and no other clinician's corrections or confirmation")
-    w.readerEdit.setText("qa-features")
+    w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-01"))
     check(w.changeReader() and w.currentRecord["partition"]["state"] == "confirmed", "returning reader restores their own confirmed correction")
 
     w.selectCase(1)

@@ -16,6 +16,7 @@ from slicer.ScriptedLoadableModule import ScriptedLoadableModule, ScriptedLoadab
 
 MODULE_DIR = Path(__file__).resolve().parent
 ROOT = MODULE_DIR.parent
+READER_IDS = tuple(f"reader-{number:02d}" for number in range(1, 11))
 if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 from PneumoconiosisLib.core import (
@@ -129,9 +130,18 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
         progress_row = qt.QHBoxLayout()
         progress_row.setSpacing(4)
-        self.progressLabel = qt.QLabel("请选择包含单帧胸片的目录")
+        self.progressLabel = qt.QLabel("请选择目录")
         self.progressLabel.setStyleSheet("color:#7d8899; font-size:11px;")
         progress_row.addWidget(self.progressLabel, 1)
+        progress_row.addWidget(qt.QLabel("读者"))
+        self.readerCombo = qt.QComboBox()
+        for number, reader in enumerate(READER_IDS, 1):
+            self.readerCombo.addItem(f"{number:02d}", reader)
+        self.readerCombo.setFixedWidth(58)
+        self.readerCombo.setAccessibleName("读者")
+        self.readerCombo.setToolTip("每位读者选择自己的编号，评分与标注分别保存。")
+        self.readerCombo.connect("currentIndexChanged(int)", self.changeReader)
+        progress_row.addWidget(self.readerCombo)
         self.openButton = qt.QPushButton("打开目录")
         self.openButton.setToolTip("选择包含胸片的 DICOM 目录")
         self.openButton.connect("clicked()", self.chooseDirectory)
@@ -141,14 +151,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         progress_row.addWidget(self.exportButton)
         header.addLayout(progress_row)
         self.layout.addWidget(self.headerWidget)
-
-        reader_row = qt.QHBoxLayout()
-        reader_row.addWidget(qt.QLabel("读者编号"))
-        self.readerEdit = qt.QLineEdit(self.currentReader)
-        self.readerEdit.setToolTip("每位读者使用自己的编号；切换编号会读取该读者的独立记录。")
-        self.readerEdit.connect("editingFinished()", self.changeReader)
-        reader_row.addWidget(self.readerEdit)
-        self.layout.addLayout(reader_row)
 
         self.features = CaseFeatures(self, ROOT)
         self.layout.addWidget(self.features.qualityWidget)
@@ -316,6 +318,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             new_store.import_cases(cases)
             recovered = new_store.recover_audio()
             new_reader = validate_reader(reader or new_store.preference("reader", "reader-01"))
+            if new_reader not in READER_IDS:
+                raise ValueError("读者请选择 01–10。")
         except Exception:
             new_store.close()
             if not same_project:
@@ -331,10 +335,10 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.spatialState = []
         self.store, self.cases = new_store, cases
         self.currentReader = new_reader
-        self.readerEdit.setText(new_reader)
         self.currentIndex, self.currentRecord = -1, None
         self.dirty = False
         self.updating = True
+        self.readerCombo.setCurrentIndex(self.readerCombo.findData(new_reader))
         self.caseCombo.clear()
         for index, case in enumerate(cases):
             self.caseCombo.addItem(f"病例 {index + 1:03d} · {case['case_id'][-6:]}")
@@ -628,17 +632,16 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.markups.finish()
         return self.flushSave()
 
-    def changeReader(self):
-        try:
-            reader = validate_reader(self.readerEdit.text)
-        except ValueError as exc:
-            self.readerEdit.setText(self.currentReader)
-            self.showError(str(exc))
-            return False
+    def changeReader(self, *_):
+        if self.updating:
+            return True
+        reader = self.readerCombo.currentData
         if reader == self.currentReader:
             return True
         if not self.prepareLeave():
-            self.readerEdit.setText(self.currentReader)
+            self.readerCombo.blockSignals(True)
+            self.readerCombo.setCurrentIndex(self.readerCombo.findData(self.currentReader))
+            self.readerCombo.blockSignals(False)
             return False
         self.currentReader = reader
         if self.store and self.currentIndex >= 0:
@@ -713,7 +716,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def updateControls(self):
         active = self.currentIndex >= 0 and self.volume is not None
-        for control in [self.exportButton, self.caseCombo, self.noteEdit, self.completeButton, self.fitButton, self.resetButton, self.ratingsWidget]:
+        for control in [self.exportButton, self.caseCombo, self.readerCombo, self.noteEdit, self.completeButton, self.fitButton, self.resetButton, self.ratingsWidget]:
             control.setEnabled(active)
         self.previousButton.setEnabled(active and self.currentIndex > 0)
         self.nextButton.setEnabled(active and self.currentIndex + 1 < len(self.cases))
@@ -723,7 +726,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             return
         statuses = self.store.completion([c["case_id"] for c in self.cases], self.currentReader)
         count = sum(value == "complete" for value in statuses.values())
-        self.progressLabel.setText(f"当前 {self.currentIndex + 1} / {len(self.cases)}　·　已完成 {count} / {len(self.cases)}")
+        self.progressLabel.setText(f"{self.currentIndex + 1}/{len(self.cases)} · 完成 {count}")
         self.updating = True
         for i, case in enumerate(self.cases):
             status = "已完成" if statuses.get(case["case_id"]) == "complete" else "未完成"
