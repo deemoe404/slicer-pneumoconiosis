@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 import qt
-import ctk
 import slicer
 import vtk
 from slicer.ScriptedLoadableModule import ScriptedLoadableModule, ScriptedLoadableModuleWidget
@@ -170,9 +169,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.layout.addWidget(ratings)
         self.layout.addWidget(self.features.partitionWidget)
 
-        spatial = ctk.ctkCollapsibleButton()
-        spatial.text = "点与区域"
-        spatial.collapsed = True
+        spatial = qt.QGroupBox("点与区域")
         self.spatialGroup = spatial
         spatial_layout = qt.QVBoxLayout(spatial)
         tools = qt.QHBoxLayout()
@@ -214,8 +211,9 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.noteEdit.connect("textChanged()", self.noteChanged)
         self.layout.addWidget(self.noteEdit)
 
-        self.saveLabel = qt.QLabel("尚未打开病例")
+        self.saveLabel = qt.QLabel()
         self.saveLabel.setWordWrap(True)
+        self.saveLabel.hide()
         self.layout.addWidget(self.saveLabel)
         self.retryButton = qt.QPushButton("重试保存")
         self.retryButton.connect("clicked()", self.flushSave)
@@ -230,14 +228,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         image_row.addWidget(self.resetButton)
         self.layout.addLayout(image_row)
 
-        tip = qt.QLabel("未评 ≠ 0 级；不可评价单独记录。\n六区为读片分区，评分需参照标准片。")
-        tip.setStyleSheet("color:#7d8899; font-size:11px; margin-top:8px;")
-        tip.setWordWrap(True)
-        self.layout.addWidget(tip)
-        self.locationLabel = qt.QLabel()
-        self.locationLabel.setWordWrap(True)
-        self.locationLabel.setStyleSheet("color:#7d8899; font-size:10px;")
-        self.layout.addWidget(self.locationLabel)
         self.layout.addStretch(1)
         self.closeGuard = CloseGuard(self)
         slicer.util.mainWindow().installEventFilter(self.closeGuard)
@@ -343,8 +333,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         for index, case in enumerate(cases):
             self.caseCombo.addItem(f"病例 {index + 1:03d} · {case['case_id'][-6:]}")
         self.updating = False
-        self.locationLabel.setText("仅保存到本机 · 原始 DICOM 保持只读")
-        self.locationLabel.setToolTip(str(new_store.path))
         last_id = new_store.preference("last_case:" + new_reader)
         index = next((i for i, case in enumerate(cases) if case["case_id"] == last_id), 0)
         opened = self.selectCase(index)
@@ -707,12 +695,14 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def setSaveStatus(self, text, error=False):
         self.saveLabel.setText(text)
-        self.saveLabel.setStyleSheet("color:" + ("#e57373" if error else "#5ca989") + "; margin:6px 0;")
+        self.saveLabel.setStyleSheet("color:#e57373; margin:6px 0;")
+        self.saveLabel.setVisible(error)
         self.retryButton.setVisible(error)
 
     def showError(self, text):
         self.saveLabel.setText(text)
         self.saveLabel.setStyleSheet("color:#e57373; margin:6px 0;")
+        self.saveLabel.show()
 
     def updateControls(self):
         active = self.currentIndex >= 0 and self.volume is not None

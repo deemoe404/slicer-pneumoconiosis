@@ -126,6 +126,7 @@ def run():
         w.store.connection.executescript("CREATE TEMP TRIGGER reject_save BEFORE INSERT ON annotations BEGIN SELECT RAISE(ABORT, 'QA forced save failure'); END;")
         w.noteEdit.setPlainText("仅 QA：模拟失败后保留输入")
         check(not w.selectCase(1) and w.currentIndex == 0, "save failure blocks case switch and retains current input")
+        check(w.saveLabel.isVisible() and w.retryButton.isVisible(), "actual save errors and retry remain visible")
         w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-02"))
         check(w.currentReader == "reader-01" and w.readerCombo.currentData == "reader-01",
               "a failed save blocks reader switching and restores the original reader selection")
@@ -133,6 +134,7 @@ def run():
         check(w.closeGuard.eventFilter(slicer.util.mainWindow(), close) and not close.isAccepted(), "save failure blocks application close")
         w.store.connection.execute("DROP TRIGGER reject_save")
         check(w.flushSave(), "retry recovers buffered input after storage failure")
+        check(not w.saveLabel.isVisible() and not w.retryButton.isVisible(), "successful saves leave no persistent status row")
         # Non-scorable is explicitly different from zero and requires a reason at completion.
         w.selectCase(2)
         w.features.qualityChoices.buttons[4].click()

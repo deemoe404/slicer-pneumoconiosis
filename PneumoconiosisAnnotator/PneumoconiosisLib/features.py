@@ -51,6 +51,7 @@ class CaseFeatures:
         self.editLungsButton = qt.QPushButton("修正肺野")
         self.editLungsButton.connect("clicked()", self.edit_lungs)
         self.editPointsButton = qt.QPushButton("调整分界")
+        self.editPointsButton.setToolTip("拖动 R-A / L-A 肺尖、R-D / L-D 膈顶，六区会重新计算。")
         self.editPointsButton.setCheckable(True)
         self.editPointsButton.connect("toggled(bool)", self.edit_landmarks)
         for button in (self.autoButton, self.editLungsButton, self.editPointsButton):
@@ -68,10 +69,6 @@ class CaseFeatures:
         self.clearButton.connect("clicked()", self.clear_partition)
         row.addWidget(self.clearButton)
         layout.addLayout(row)
-        self.partitionLabel = qt.QLabel("自动结果需核对左右肺野、肺尖和膈顶后确认。")
-        self.partitionLabel.setWordWrap(True)
-        self.partitionLabel.setStyleSheet("color:#7d8899; font-size:11px;")
-        layout.addWidget(self.partitionLabel)
         self.partition = ImagePartition(self.partition_edited, self.w.showError)
 
         self.audioWidget = qt.QGroupBox("语音备注")
@@ -79,6 +76,7 @@ class CaseFeatures:
         layout.setSpacing(3)
         row = qt.QHBoxLayout()
         self.recordButton = qt.QPushButton("● 开始录音")
+        self.recordButton.setToolTip("使用系统默认麦克风；录音随当前病例和读者保存。")
         self.recordButton.connect("clicked()", self.toggle_recording)
         row.addWidget(self.recordButton)
         self.audioCombo = qt.QComboBox()
@@ -92,9 +90,6 @@ class CaseFeatures:
         self.removeAudioButton.connect("clicked()", self.remove_audio)
         row.addWidget(self.removeAudioButton)
         layout.addLayout(row)
-        self.audioLabel = qt.QLabel("本地录音 · 随当前胸片和读者保存")
-        self.audioLabel.setStyleSheet("color:#7d8899; font-size:11px;")
-        layout.addWidget(self.audioLabel)
         self.audioTimer = qt.QTimer()
         self.audioTimer.setInterval(250)
         self.audioTimer.connect("timeout()", self.recording_time)
@@ -129,7 +124,6 @@ class CaseFeatures:
         finally:
             self.restoring = False
         self.update_audio_list()
-        self.audioLabel.setText(f"本例已保存 {len(self.audio)} 段录音" if self.audio else "本地录音 · 随当前胸片和读者保存")
         if cached is not None and self.partition.state is not None:
             self.changed()
         self.update_controls()
@@ -188,7 +182,7 @@ class CaseFeatures:
                    "source_sha256": case["source_sha256"], "project": str(self.w.store.directory), "input": str(path)}
             self.jobs[key] = job
             self.model_worker.send(job)
-            self.partitionLabel.setText("正在自动分割肺野…可以继续查看其他病例。")
+            self.autoButton.setToolTip("正在自动分割肺野，可以继续查看其他病例。")
             self.update_controls()
             return True
         except Exception as exc:
@@ -202,7 +196,8 @@ class CaseFeatures:
         if not job:
             return
         if value["event"] == "progress":
-            self.partitionLabel.setText(value["text"])
+            self.autoButton.setText("加载模型…" if "加载" in value["text"] else "分割中…")
+            self.autoButton.setToolTip(value["text"])
             return
         self.jobs.pop(value["job"], None)
         if value["event"] == "error":
@@ -247,8 +242,6 @@ class CaseFeatures:
         if not self.restoring:
             self.w.markups.finish()
         self.partition.edit_landmarks(enabled)
-        if enabled:
-            self.partitionLabel.setText("拖动 R-A / L-A 肺尖、R-D / L-D 膈顶，六区会重新计算。")
 
     def confirm_partition(self):
         try:
@@ -289,7 +282,6 @@ class CaseFeatures:
             self.audio_job = job
             self.last_audio_error = None
             self.audio_worker = Worker(self.root, "record", self.audio_event, self.audio_ended, job)
-            self.audioLabel.setText("正在启动麦克风…")
             self.update_controls()
             return True
         except Exception as exc:
@@ -300,6 +292,7 @@ class CaseFeatures:
         if value["event"] == "recording":
             self.recording_started = time.monotonic()
             self.audioTimer.start()
+            self.recording_time()
         elif value["event"] == "recorded":
             self.audioTimer.stop()
             recording = value.get("recording")
@@ -309,13 +302,13 @@ class CaseFeatures:
                     self.audio.append(recording)
                     self.changed()
             self.update_audio_list()
-            self.audioLabel.setText("录音已保存" if recording else "没有录入音频，未添加空录音。")
+            if not recording:
+                self.w.showError("未录入音频，请重试。")
             if value.get("warning"):
                 self.w.showError(value["warning"] + " 已录入的部分已保存。")
         elif value["event"] == "error":
             self.last_audio_error = value["message"]
             self.audioTimer.stop()
-            self.audioLabel.setText("录音失败，请检查麦克风权限和设备。")
             self.w.showError("录音失败：" + value["message"])
 
     def audio_ended(self, code, _errors):
@@ -323,14 +316,13 @@ class CaseFeatures:
         self.recording_started = None
         if code and self.last_audio_error is None:
             self.last_audio_error = "录音进程意外结束。"
-            self.audioLabel.setText("录音意外停止，请检查设备或重试。")
             self.w.showError("录音进程意外结束；已写入文件会在重开项目时检查恢复。")
         self.update_controls()
 
     def recording_time(self):
         if self.recording_started is not None:
             seconds = int(time.monotonic() - self.recording_started)
-            self.audioLabel.setText(f"● 正在录音　{seconds // 60:02d}:{seconds % 60:02d}")
+            self.recordButton.setText(f"■ 停止 {seconds // 60:02d}:{seconds % 60:02d}")
 
     def stop_recording(self):
         if self.audio_worker:
@@ -396,16 +388,18 @@ class CaseFeatures:
         self.audioCombo.setEnabled(active and bool(self.audio) and not recording)
         self.playButton.setEnabled(active and bool(self.audio) and not recording)
         self.removeAudioButton.setEnabled(active and bool(self.audio) and not recording and not playing)
-        self.recordButton.setText("■ 停止录音" if recording else "● 开始录音")
+        if recording and self.recording_started is not None:
+            self.recording_time()
+        else:
+            self.recordButton.setText("启动录音…" if recording else "● 开始录音")
         self.playButton.setText("停止" if playing else "回放")
         self.recordButton.setStyleSheet("color:#d96767; font-weight:600;" if recording else "")
         if self.jobs:
             self.autoButton.setText("分割中…")
         else:
             self.autoButton.setText("已生成分区" if present else "自动肺野 / 六区")
-        if editable and not self.editPointsButton.isChecked():
-            state = self.partition.state["state"]
-            labels = {"pending_review": "自动结果 · 待医生确认", "edited": "已手动修正 · 待重新确认", "confirmed": "分区已确认"}
-            self.partitionLabel.setText(labels[state] + "；可修正肺野及肺尖 / 膈顶。")
-        elif not present and not self.jobs:
-            self.partitionLabel.setText("自动结果需核对左右肺野、肺尖和膈顶后确认。")
+            self.autoButton.setToolTip("肺野与六区已生成。" if present else "自动生成左右肺野与六个读片区域。")
+        state = self.partition.state["state"] if editable else None
+        labels = {"pending_review": "待确认", "edited": "已修正，待重新确认", "confirmed": "分区已确认"}
+        self.confirmButton.setText("已确认" if state == "confirmed" else "确认分区")
+        self.confirmButton.setToolTip(labels.get(state, "确认当前肺野与六区分界。"))

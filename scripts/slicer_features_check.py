@@ -88,6 +88,7 @@ try:
     wait_for(lambda: f.recording_started is not None or f.last_audio_error is not None, 15)
     check(f.recording_started is not None, "native Slicer control starts the real microphone worker")
     events(1.1)
+    check("停止" in f.recordButton.text and "00:" in f.recordButton.text, "the recording button displays elapsed time without a separate caption")
     check(w.selectCase(1), "case switch stops and saves an ongoing recording before leaving")
     audio = w.store.get(first, "reader-01")["audio"]
     check(len(audio) == 1 and audio[0]["frames"] > 0, "actual microphone PCM is attached to the original case and reader")
@@ -196,7 +197,7 @@ except Exception:
     traceback.print_exc()
     if "w" in globals():
         REPORT["save_status"] = w.saveLabel.text
-        REPORT["feature_status"] = w.features.partitionLabel.text
+        REPORT["feature_status"] = w.features.autoButton.text
         REPORT["worker_error"] = w.features.model_worker.stderr if w.features.model_worker else None
         slicer.util.mainWindow().grab().save(str(OUT / "features-failure.png"))
 (OUT / "features-result.json").write_text(json.dumps(REPORT, ensure_ascii=False, indent=2))

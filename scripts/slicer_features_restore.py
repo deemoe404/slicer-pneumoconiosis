@@ -79,7 +79,7 @@ try:
     check(not w.completeCase() and w.currentIndex == 1, "completion rejects an unconfirmed automatic partition even when quality and all six ratings are filled")
     check(f.confirm_partition() and w.completeCase() and w.currentIndex == 2, "confirmed partition, quality and six ratings can complete and advance together")
     put_record(original)
-    check(not f.audio and "本地录音" in f.audioLabel.text, "a different case's audio controls report its own recording state")
+    check(not f.audio and f.audioCombo.count == 0 and "开始录音" in f.recordButton.text, "a different case's audio controls report its own recording state")
     lock = qt.QLockFile(str(w.store.directory / "reader.lock"))
     lock.setStaleLockTime(0)
     os.utime(w.store.directory / "reader.lock", (1, 1))
