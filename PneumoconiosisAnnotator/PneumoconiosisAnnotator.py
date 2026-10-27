@@ -77,20 +77,6 @@ class PictureWheelGuard(qt.QWidget):
         return True
 
 
-class MarkupHoverGuard(qt.QWidget):
-    def __init__(self, widget):
-        super().__init__()
-        self.widget = widget
-
-    def eventFilter(self, obj, event):
-        if event.type() in (qt.QEvent.Leave, qt.QEvent.Hide):
-            self.widget.markups.highlight(None)
-        elif event.type() == qt.QEvent.MouseMove:
-            item = self.widget.markupList.itemAt(event.pos())
-            self.widget.markups.highlight(item.data(qt.Qt.UserRole) if item else None)
-        return False
-
-
 class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
     def setup(self):
         super().setup()
@@ -168,7 +154,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.layout.addWidget(self.headerWidget)
 
         self.features = CaseFeatures(self, ROOT)
-        self.layout.insertWidget(0, self.features.audioWidget)
+        self.layout.addWidget(self.features.audioWidget)
         self.layout.addWidget(self.features.qualityWidget)
 
         ratings = qt.QGroupBox("六肺区评分")
@@ -203,8 +189,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.markupList.setAccessibleName("点与区域列表")
         self.markupList.setSelectionMode(qt.QAbstractItemView.SingleSelection)
         self.markupList.setUniformItemSizes(True)
-        self.markupList.setMouseTracking(True)
-        self.markupList.viewport().setMouseTracking(True)
         self.markupList.setHorizontalScrollBarPolicy(qt.Qt.ScrollBarAlwaysOff)
         self.markupList.setTextElideMode(qt.Qt.ElideRight)
         self.markupList.connect("currentRowChanged(int)", self.selectMarkup)
@@ -225,8 +209,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         spatial_layout.addWidget(self.spatialHint)
         self.layout.addWidget(spatial)
         self.markups = ImageMarkups(self.spatialChanged, self.updateSpatialControls)
-        self.markupHoverGuard = MarkupHoverGuard(self)
-        self.markupList.viewport().installEventFilter(self.markupHoverGuard)
 
         self.saveLabel = qt.QLabel()
         self.saveLabel.setWordWrap(True)
@@ -263,7 +245,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
     def cleanup(self):
         self.saveTimer.stop()
         self.prepareLeave()
-        self.markupList.viewport().removeEventFilter(self.markupHoverGuard)
         self.viewerToolbar.close()
         self.features.close()
         self.markups.close()
@@ -521,7 +502,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             scroll = self.markupList.verticalScrollBar().value
             identifiers = list(self.markups.nodes)
             if [self.markupList.item(row).data(qt.Qt.UserRole) for row in range(self.markupList.count)] != identifiers:
-                self.markups.highlight(None)
                 self.markupList.clear()
                 for identifier in identifiers:
                     item = qt.QListWidgetItem("", self.markupList)
@@ -640,7 +620,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             return False
 
     def prepareLeave(self):
-        self.markups.highlight(None)
         if not self.features.prepare_leave():
             return False
         self.markups.finish()
