@@ -19,7 +19,7 @@ READER_IDS = tuple(f"reader-{number:02d}" for number in range(1, 11))
 if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 from PneumoconiosisLib.core import (
-    AnnotationStore, GRADES, ZONES, ZONE_NAMES, atomic_write, file_sha256, polygon_issue, scan_cases,
+    AnnotationStore, GRADES, ZONES, ZONE_NAMES, atomic_write, completion_issues, file_sha256, polygon_issue, scan_cases,
     validate_complete, validate_reader, validate_spatial,
 )
 from PneumoconiosisLib.markups import ImageMarkups
@@ -87,6 +87,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.currentRecord = None
         self.volume = None
         self.dirty = False
+        self.saveError = None
         self.updating = False
         self.entered = False
         self.spatialState = []
@@ -204,12 +205,14 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.markups = ImageMarkups(self.spatialChanged, self.updateSpatialControls)
         self.layout.addWidget(self.features.audioWidget)
 
-        self.layout.addWidget(qt.QLabel("备注 / 不可评价原因"))
+        self.noteWidget = qt.QGroupBox("备注 / 不可评价原因")
+        note_layout = qt.QVBoxLayout(self.noteWidget)
         self.noteEdit = qt.QPlainTextEdit()
         self.noteEdit.setMaximumHeight(56)
         self.noteEdit.setPlaceholderText("不可评价时，请注明肺区和原因。")
         self.noteEdit.connect("textChanged()", self.noteChanged)
-        self.layout.addWidget(self.noteEdit)
+        note_layout.addWidget(self.noteEdit)
+        self.layout.addWidget(self.noteWidget)
 
         self.saveLabel = qt.QLabel()
         self.saveLabel.setWordWrap(True)
@@ -543,6 +546,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
                 self.spatialHint.setText("单击放点；区域依次点选 ≥3 个顶点，右键结束。\n拖动顶点可调整；按原图像素坐标保存。")
         finally:
             self.spatialUpdating = False
+        self.updateCompletionControls()
 
     def selectMarkup(self, _index):
         if not self.spatialUpdating:
@@ -644,6 +648,12 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
     def completeCase(self):
         if self.currentRecord is None:
             return False
+        issues = self.updateCompletionControls()
+        # Saving/recording can be retried by this action; form errors need correction first.
+        form_issues = [message for area, message in issues.items() if area not in ("save", "audio")]
+        if form_issues:
+            self.showError("\n".join(form_issues))
+            return False
         try:
             validate_complete(self._zonesFromUI(), self.noteEdit.toPlainText())
             validate_spatial(self.spatialState, self.cases[self.currentIndex], complete=True)
@@ -694,15 +704,74 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             display.SetAndObserveColorNodeID(self.defaultDisplay["color"])
 
     def setSaveStatus(self, text, error=False):
-        self.saveLabel.setText(text)
+        if error:
+            self.saveError = text
+        elif not self.dirty:
+            self.saveError = None
+        self.saveLabel.setText(self.saveError or text)
         self.saveLabel.setStyleSheet("color:#e57373; margin:6px 0;")
-        self.saveLabel.setVisible(error)
-        self.retryButton.setVisible(error)
+        self.saveLabel.setVisible(bool(self.saveError))
+        self.retryButton.setVisible(bool(self.saveError))
+        self.updateCompletionControls()
 
     def showError(self, text):
         self.saveLabel.setText(text)
         self.saveLabel.setStyleSheet("color:#e57373; margin:6px 0;")
         self.saveLabel.show()
+
+    def updateCompletionControls(self):
+        active = self.currentRecord is not None and self.volume is not None
+        issues = {}
+        partition = self.features.partition.state or self.features.partition_state
+        zones = self._zonesFromUI()
+        if active:
+            quality = {**self.currentRecord["quality"], "grade": self.features.qualityChoices.value}
+            issues = completion_issues(zones, self.noteEdit.toPlainText(), quality,
+                                       self.spatialState, partition, self.cases[self.currentIndex])
+            if self.features.audio_stop_error:
+                issues["audio"] = self.features.audio_stop_error
+            if self.saveError:
+                issues["save"] = self.saveError
+        needs_reason = any(value["state"] == "not_scorable" for value in zones.values())
+        for key, widget, title, optional in (
+            ("quality", self.features.qualityWidget, "整片质量", False),
+            ("ratings", self.ratingsWidget, "六肺区评分", False),
+            ("partition", self.features.partitionWidget, "肺野与六区", partition is None),
+            ("spatial", self.spatialGroup, "点与区域", not self.spatialState),
+            ("audio", self.features.audioWidget, "语音备注", True),
+            ("note", self.noteWidget, "备注 / 不可评价原因", not needs_reason),
+        ):
+            issue = issues.get(key)
+            if key == "ratings":
+                issue = issue or issues.get("note")
+            state = "missing" if issue else "ready" if active else "inactive"
+            if widget.property("completionState") != state:
+                widget.setProperty("completionState", state)
+                name = "completion_" + key
+                widget.setObjectName(name)
+                color = "#b43e3e" if issue else "#207544"
+                widget.setStyleSheet(
+                    f"QGroupBox#{name} {{border:1px solid {color}; border-radius:4px; margin-top:1.1em;}}"
+                    f"QGroupBox#{name}::title {{subcontrol-origin:margin; left:6px; padding:0 3px; color:{color};}}"
+                    if active else "")
+            suffix = (" · 待完成" if issue else " · 可选 ✓" if optional else " ✓") if active else ""
+            widget.setTitle(title + suffix)
+            widget.setToolTip(issue or ("此项可不填写。" if optional else "已满足完成条件。") if active else "请选择胸片目录。")
+            widget.setAccessibleDescription(widget.toolTip)
+        for zone, control in self.gradeSliders.items():
+            ready = zones[zone]["state"] != "unread" and not (zones[zone]["state"] == "not_scorable" and "note" in issues)
+            control.set_completion_state(active, ready)
+        state = "missing" if issues else "ready" if active else "inactive"
+        if self.completeButton.property("completionState") != state:
+            self.completeButton.setProperty("completionState", state)
+            color, background = ("#b43e3e", "#fff1f1") if issues else ("#207544", "#edf8f0")
+            self.completeButton.setStyleSheet(
+                f"QPushButton {{color:{color}; background-color:{background}; border:1px solid {color};"
+                "border-radius:4px; padding:4px 7px; font-weight:600;}" if active else "font-weight:600;")
+        hint = "\n".join(issues.values()) if issues else "已满足完成条件，点击后保存并进入下一例。"
+        self.completeButton.setToolTip(hint if active else "请选择胸片目录。")
+        self.completeButton.setAccessibleDescription(self.completeButton.toolTip)
+        return issues
 
     def updateControls(self):
         active = self.currentIndex >= 0 and self.volume is not None

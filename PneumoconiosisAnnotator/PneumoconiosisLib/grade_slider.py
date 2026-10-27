@@ -47,13 +47,14 @@ class GradeSlider(qt.QWidget):
         super().__init__(parent)
         self.changed = changed
         self._value = "unread"
+        self.completionColor = None
         self.restoring = False
         layout = qt.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
-        name = qt.QLabel(zone_name)
-        name.setMinimumWidth(28)
-        layout.addWidget(name)
+        self.nameLabel = qt.QLabel(zone_name)
+        self.nameLabel.setMinimumWidth(28)
+        layout.addWidget(self.nameLabel)
         self.slider = qt.QSlider(qt.Qt.Horizontal)
         self.slider.setLayoutDirection(qt.Qt.LeftToRight)
         self.slider.setMinimumWidth(190)
@@ -106,13 +107,20 @@ class GradeSlider(qt.QWidget):
 
     def refresh(self):
         self.valueLabel.setText({"unread": "未评", "not_scorable": "不可评"}.get(self._value, self._value))
-        self.valueLabel.setStyleSheet("font-weight:600;" if self._value in GRADES else "color:#7d8899;")
+        self.valueLabel.setStyleSheet("font-weight:600;" + ("color:" + self.completionColor + ";" if self.completionColor else ""))
         self.unreadButton.setChecked(self._value == "unread")
         self.notScorableButton.setChecked(self._value == "not_scorable")
 
     def preview(self, position):
         self.valueLabel.setText(GRADES[position])
         self.valueLabel.setStyleSheet("font-weight:600;")
+
+    def set_completion_state(self, active, ready):
+        self.setProperty("completionState", "ready" if active and ready else "missing" if active else "inactive")
+        self.completionColor = ("#207544" if ready else "#b43e3e") if active else None
+        style = "color:" + self.completionColor + "; font-weight:600;" if active else ""
+        self.nameLabel.setStyleSheet(style)
+        self.valueLabel.setStyleSheet(style)
 
     def commit(self, position):
         if self.restoring:

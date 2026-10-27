@@ -84,6 +84,11 @@ def zone_map(right, left, landmarks):
     return result
 
 
+def validate_partition_confirmation(partition):
+    if partition is not None and partition.get("state") != "confirmed":
+        raise ValueError("请先核对左右肺野和肺尖 / 膈顶，再点击“确认分区”。")
+
+
 def validate_partition(partition, image, assets, complete=False):
     if partition is None:
         return None
@@ -104,6 +109,6 @@ def validate_partition(partition, image, assets, complete=False):
     value["pixel_counts"] = {str(i): int(counts[i]) for i in range(1, 7)}
     if value["state"] == "confirmed" and not value.get("confirmed_at"):
         raise ValueError("分区确认时间缺失。")
-    if complete and value["state"] != "confirmed":
-        raise ValueError("请先核对左右肺野和肺尖 / 膈顶，再点击“确认分区”。")
+    if complete:
+        validate_partition_confirmation(value)
     return value

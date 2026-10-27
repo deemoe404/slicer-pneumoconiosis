@@ -29,6 +29,7 @@ class CaseFeatures:
         self.audio_job = None
         self.recording_started = None
         self.last_audio_error = None
+        self.audio_stop_error = None
         self.qualityWidget = qt.QGroupBox("整片质量")
         layout = qt.QVBoxLayout(self.qualityWidget)
         layout.setSpacing(3)
@@ -314,6 +315,7 @@ class CaseFeatures:
     def audio_ended(self, code, _errors):
         self.audioTimer.stop()
         self.recording_started = None
+        self.audio_stop_error = None
         if code and self.last_audio_error is None:
             self.last_audio_error = "录音进程意外结束。"
             self.w.showError("录音进程意外结束；已写入文件会在重开项目时检查恢复。")
@@ -327,11 +329,14 @@ class CaseFeatures:
     def stop_recording(self):
         if self.audio_worker:
             if not self.audio_worker.stop_recording():
-                self.w.showError("录音仍在保存，请稍后重试；暂不能切换病例。")
+                self.audio_stop_error = "录音仍在保存，请稍后重试；暂不能切换病例。"
+                self.w.showError(self.audio_stop_error)
+                self.update_controls()
                 return False
             self.audioTimer.stop()
             self.recording_started = None
-            self.update_controls()
+        self.audio_stop_error = None
+        self.update_controls()
         return True
 
     def update_audio_list(self):
@@ -403,3 +408,4 @@ class CaseFeatures:
         labels = {"pending_review": "待确认", "edited": "已修正，待重新确认", "confirmed": "分区已确认"}
         self.confirmButton.setText("已确认" if state == "confirmed" else "确认分区")
         self.confirmButton.setToolTip(labels.get(state, "确认当前肺野与六区分界。"))
+        self.w.updateCompletionControls()

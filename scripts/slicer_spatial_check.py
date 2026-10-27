@@ -73,6 +73,7 @@ try:
     events(0.55)
     point = w.store.get(first_id, "reader-01")["spatial_annotations"]
     check(len(point) == 1 and point[0]["kind"] == "point", "native mouse click places one point and autosaves")
+    check(w.spatialGroup.property("completionState") == "ready", "a placed point satisfies the spatial completion requirement")
     point_id = point[0]["id"]
     check(max(abs(a - b) for a, b in zip(point[0]["points_ijk"][0], [1600, 1100, 0])) < 4,
           "mouse placement exports original raster pixel coordinates")
@@ -115,6 +116,8 @@ try:
     mouse(w, [1100, 750, 0])
     w.finishMarkupButton.click()
     check(w.currentRecord["spatial_annotations"][1]["state"] == "draft", "two-point region persists explicitly as an unfinished draft")
+    check(w.spatialGroup.property("completionState") == "missing" and "spatial" in w.updateCompletionControls(),
+          "an unfinished region turns its area red and reports the blocking geometry")
     draft_id = w.currentRecord["spatial_annotations"][1]["id"]
     check(w.selectCase(1) and w.selectCase(0), "unfinished region survives navigation")
     w.markups.select(draft_id)
@@ -122,6 +125,7 @@ try:
     mouse(w, [900, 1250, 0])
     w.finishMarkupButton.click()
     check(w.currentRecord["spatial_annotations"][1]["state"] == "ready", "restored region can continue drawing and become a valid closed region")
+    check(w.spatialGroup.property("completionState") == "ready", "repairing the region returns its area to green")
     # Fail a real spatial write and ensure it cannot silently disappear on navigation.
     w.store.connection.executescript("CREATE TEMP TRIGGER reject_spatial BEFORE INSERT ON annotations BEGIN SELECT RAISE(ABORT, 'QA spatial disk failure'); END;")
     w.renameMarkup("QA_REGION_RECOVERED")

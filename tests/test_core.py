@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "PneumoconiosisAnnotator"))
-from PneumoconiosisLib.core import AnnotationStore, GRADES, GRADE_CODES, ZONES, empty_zones, polygon_issue, validate_complete
+from PneumoconiosisLib.core import AnnotationStore, GRADES, GRADE_CODES, ZONES, completion_issues, empty_zones, polygon_issue, validate_complete
 
 
 class PersistenceTests(unittest.TestCase):
@@ -52,6 +52,21 @@ class PersistenceTests(unittest.TestCase):
         self.store.save("CXR-0", "reader-01", zones, "note")
         self.assertEqual(self.store.get("CXR-0", "reader-02")["zones"], empty_zones())
         self.assertEqual(self.store.get("CXR-1", "reader-01")["zones"], empty_zones())
+
+    def test_completion_reports_all_missing_fields_and_preserves_optional_inputs(self):
+        zones = empty_zones()
+        zones["RU"] = {"state": "not_scorable", "grade": None}
+        shape = self.spatial(points=[[100, 100, 0], [200, 200, 0]])
+        pending = {"state": "pending_review"}
+        issues = completion_issues(zones, "  ", None, [shape], pending, self.cases[0])
+        self.assertEqual(set(issues), {"ratings", "note", "quality", "spatial", "partition"})
+        self.assertEqual(zones["RM"]["state"], "unread")
+        for zone in ZONES[1:]:
+            zones[zone] = {"state": "scored", "grade": "0/0"}
+        issues = completion_issues(zones, "右上遮挡", {"grade": 4}, [self.spatial()], None, self.cases[0])
+        self.assertEqual(issues, {})
+        self.store.save("CXR-0", "reader-01", zones, "右上遮挡", "complete", quality={"grade": 4})
+        self.assertEqual(self.store.get("CXR-0", "reader-01")["status"], "complete")
 
     def test_invalid_input_never_overwrites_saved_record(self):
         self.store.save("CXR-0", "r", empty_zones(), "original")

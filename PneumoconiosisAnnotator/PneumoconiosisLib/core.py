@@ -57,13 +57,21 @@ def validate_zones(zones):
     return normalized
 
 
-def validate_complete(zones, note):
+def rating_completion_issues(zones, note):
     zones = validate_zones(zones)
+    issues = {}
     unread = [ZONE_NAMES[z] for z in ZONES if zones[z]["state"] == "unread"]
     if unread:
-        raise ValueError("尚未评价：" + "、".join(unread))
+        issues["ratings"] = "尚未评价：" + "、".join(unread)
     if any(v["state"] == "not_scorable" for v in zones.values()) and not note.strip():
-        raise ValueError("请在备注中说明不可评价的肺区及原因。")
+        issues["note"] = "请在备注中说明不可评价的肺区及原因。"
+    return issues
+
+
+def validate_complete(zones, note):
+    issues = rating_completion_issues(zones, note)
+    if issues:
+        raise ValueError(next(iter(issues.values())))
 
 
 def validate_quality(quality, complete=False):
@@ -143,6 +151,23 @@ def validate_spatial(annotations, image, complete=False):
         result.append({"id": identifier, "kind": kind, "label": label, "points_ijk": points,
                        "state": "draft" if issue else "ready"})
     return result
+
+
+def completion_issues(zones, note, quality, spatial, partition, image):
+    """Cheap form checks shared by live feedback and completion, without loading assets."""
+    from .partition import validate_partition_confirmation
+
+    issues = rating_completion_issues(zones, note)
+    for area, validate in (
+        ("quality", lambda: validate_quality(quality, complete=True)),
+        ("spatial", lambda: validate_spatial(spatial, image, complete=True)),
+        ("partition", lambda: validate_partition_confirmation(partition)),
+    ):
+        try:
+            validate()
+        except ValueError as exc:
+            issues[area] = str(exc)
+    return issues
 
 
 def file_sha256(path):

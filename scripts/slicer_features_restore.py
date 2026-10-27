@@ -45,6 +45,7 @@ try:
     expected = previous["expected_first"]
     check(w.currentRecord["quality"] == expected["quality"] and len(f.audio) == 1 and f.audio == expected["audio"], "quality grade, defect reason and the real microphone recording restore exactly")
     check(w.currentRecord["partition"] == expected["partition"], "corrected lung-mask hashes, landmarks, model provenance and clinician confirmation restore exactly")
+    check(f.partitionWidget.property("completionState") == "ready", "a restored confirmed partition is green")
     right, left = w.store.assets.lungs(expected["partition"]["masks"])
     actual_right, actual_left = f.partition.masks()
     check(np.array_equal(right, actual_right) and np.array_equal(left, actual_left), "native editable lung masks match the stored original-resolution pixels after restart")
@@ -65,7 +66,9 @@ try:
     events(.8)
     check(w.currentRecord["partition"]["state"] == "edited" and w.currentRecord["partition"]["confirmed_at"] is None,
           "editing a previously confirmed partition clears its confirmation and autosaves the new geometry")
+    check(f.partitionWidget.property("completionState") == "missing", "editing a confirmed partition immediately turns its area red")
     check(f.confirm_partition(), "clinician can confirm the corrected partition again")
+    check(f.partitionWidget.property("completionState") == "ready", "reconfirmation turns the partition green again")
     # Restore the canonical QA fixture after testing state transitions.
     w.currentRecord = put_record(expected)
     f.restore()
@@ -77,6 +80,8 @@ try:
         control.slider.setSliderPosition(1)  # 0/0 is the second of the twelve grades.
         control.slider.triggerAction(qt.QAbstractSlider.SliderMove)
     check(not w.completeCase() and w.currentIndex == 1, "completion rejects an unconfirmed automatic partition even when quality and all six ratings are filled")
+    check(f.partitionWidget.property("completionState") == "missing" and w.completeButton.property("completionState") == "missing",
+          "the unconfirmed partition and completion action stay red after other fields are satisfied")
     check(f.confirm_partition() and w.completeCase() and w.currentIndex == 2, "confirmed partition, quality and six ratings can complete and advance together")
     put_record(original)
     check(not f.audio and f.audioCombo.count == 0 and "开始录音" in f.recordButton.text, "a different case's audio controls report its own recording state")

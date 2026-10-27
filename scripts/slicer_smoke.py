@@ -61,6 +61,13 @@ def run():
         check(len(w.cases) == 11, "11 eligible single-frame DX cases")
         hashes = {c["case_id"]: c["source_sha256"] for c in w.cases}
         check(w._zonesFromUI() == empty_zones(), "initial ratings are unread, never auto-filled")
+        check(w.features.qualityWidget.property("completionState") == "missing"
+              and w.ratingsWidget.property("completionState") == "missing"
+              and w.completeButton.property("completionState") == "missing",
+              "unread quality, six-zone ratings and completion action start red")
+        check(all(group.property("completionState") == "ready" for group in
+                  (w.features.partitionWidget, w.spatialGroup, w.features.audioWidget, w.noteWidget)),
+              "empty optional partition, geometry, audio and notes stay green without becoming required")
         check(all(control.slider.minimum == 0 and control.slider.maximum == 11 and control.slider.singleStep == 1
                   for control in w.gradeSliders.values()), "each lung zone has exactly twelve discrete slider grades")
         check(w.features.qualityChoices.value is None and len(w.features.qualityChoices.buttons) == 5,
@@ -73,6 +80,8 @@ def run():
         mouse(control.slider, qt.QEvent.MouseButtonPress, 0)
         mouse(control.slider, qt.QEvent.MouseButtonRelease, 0)
         check(w._zonesFromUI()["RU"]["grade"] == "0/-", "clicking the unmoved first slider handle explicitly records the lowest grade")
+        check(control.property("completionState") == "ready" and w.gradeSliders["RM"].property("completionState") == "missing",
+              "each lung-zone row turns green independently while unread rows stay red")
         key = qt.QKeyEvent(qt.QEvent.KeyPress, qt.Qt.Key_Right, qt.Qt.NoModifier)
         slicer.app.sendEvent(control.slider, key)
         check(w._zonesFromUI()["RU"]["grade"] == "0/0", "native keyboard arrows select the adjacent small grade")
@@ -105,8 +114,12 @@ def run():
         check(saved["note"].startswith("仅 QA"), "debounced note autosaves without a save button")
         first_zones = w._zonesFromUI()
         check(saved["zones"] == first_zones, "grade changes autosave immediately")
+        check(w.completeButton.property("completionState") == "ready", "satisfied required fields turn the completion action green")
+        check(w.completeButton.grab().save(str(OUT / "completion-ready-button.png")), "capture the green completion action")
         check(w.completeCase() and w.currentIndex == 1, "complete persists and switches to next case")
         check(w.features.qualityChoices.value is None, "case switching restores unread quality without inheriting the previous selection")
+        check(w.completeButton.property("completionState") == "missing"
+              and w.features.qualityWidget.property("completionState") == "missing", "case switching recomputes the next case's missing requirements")
         for i, zone in enumerate(ZONES):
             rate(w, zone, GRADES[i + 6])
         second_zones = w._zonesFromUI()
@@ -127,6 +140,8 @@ def run():
         w.noteEdit.setPlainText("仅 QA：模拟失败后保留输入")
         check(not w.selectCase(1) and w.currentIndex == 0, "save failure blocks case switch and retains current input")
         check(w.saveLabel.isVisible() and w.retryButton.isVisible(), "actual save errors and retry remain visible")
+        check(w.completeButton.property("completionState") == "missing" and "save" in w.updateCompletionControls(),
+              "storage failure turns completion red even when all form inputs are valid")
         w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-02"))
         check(w.currentReader == "reader-01" and w.readerCombo.currentData == "reader-01",
               "a failed save blocks reader switching and restores the original reader selection")
@@ -135,14 +150,19 @@ def run():
         w.store.connection.execute("DROP TRIGGER reject_save")
         check(w.flushSave(), "retry recovers buffered input after storage failure")
         check(not w.saveLabel.isVisible() and not w.retryButton.isVisible(), "successful saves leave no persistent status row")
+        check(w.completeButton.property("completionState") == "ready", "a successful storage retry restores green completion")
         # Non-scorable is explicitly different from zero and requires a reason at completion.
         w.selectCase(2)
         w.features.qualityChoices.buttons[4].click()
         for zone in ZONES:
             rate(w, zone, "0/0")
         w.gradeSliders["RU"].notScorableButton.click()
+        check(w.noteWidget.property("completionState") == "missing" and w.gradeSliders["RU"].property("completionState") == "missing",
+              "non-scorable without a reason marks both the note area and affected row red")
         check(not w.completeCase(), "not-scorable completion requires a reason")
         w.noteEdit.setPlainText("仅 QA：右上遮挡，其余肺区可评")
+        check(w.noteWidget.property("completionState") == "ready" and w.completeButton.property("completionState") == "ready",
+              "typing the missing reason updates all indicators before the autosave delay")
         check(w.completeCase(), "non-scorable status and its note can complete with quality grade four and no defect reason")
         for index in range(len(w.cases)):
             check(w.selectCase(index), f"native DICOM reader loads sample {index + 1:02d}")
