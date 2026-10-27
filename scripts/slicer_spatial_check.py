@@ -12,6 +12,7 @@ import vtk
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "local-data" / "qa"
 REPORT = {"checks": []}
+CURSOR_BEFORE = qt.QCursor.pos()
 
 
 def check(value, message):
@@ -56,6 +57,16 @@ def click_list_row(w, row):
         held = qt.Qt.LeftButton if kind == qt.QEvent.MouseButtonPress else qt.Qt.NoButton
         event = qt.QMouseEvent(kind, qt.QPointF(point), qt.QPointF(view.mapToGlobal(point)), qt.Qt.LeftButton, held, qt.Qt.NoModifier)
         slicer.app.sendEvent(view, event)
+
+
+def hover_list_row(w, row):
+    view = w.markupList.viewport()
+    point = w.markupList.visualItemRect(w.markupList.item(row)).center()
+    qt.QCursor.setPos(view.mapToGlobal(point))
+    event = qt.QMouseEvent(qt.QEvent.MouseMove, qt.QPointF(point), qt.QPointF(view.mapToGlobal(point)),
+                          qt.Qt.NoButton, qt.Qt.NoButton, qt.Qt.NoModifier)
+    slicer.app.sendEvent(view, event)
+    events(.1)
 
 
 try:
@@ -118,8 +129,35 @@ try:
     check(w.markups.selected_id == point_id and w.markupNameEdit.text == "QA_POINT", "native list click selects the point and its rename field")
     click_list_row(w, 1)
     check(w.markups.selected_id == region_id and w.markupNameEdit.text == "QA_REGION", "native list click selects the polygon independently")
+    point_display = w.markups.nodes[point_id].GetDisplayNode()
+    region_display = w.markups.nodes[region_id].GetDisplayNode()
+    point_style = (point_display.GetSelectedColor(), point_display.GetGlyphScale())
+    region_style = (region_display.GetSelectedColor(), region_display.GetLineThickness(), region_display.GetFillOpacity())
+    geometry = w.markups.capture()
+    revisions = w.store.connection.execute("SELECT count(*) FROM revisions").fetchone()[0]
+    hover_list_row(w, 0)
+    check(w.markups.hovered_id == point_id and point_display.GetSelectedColor() != point_style[0]
+          and point_display.GetGlyphScale() > point_style[1], "hovering a list row highlights and enlarges its image point without a click")
+    check(window.grab().save(str(OUT / "spatial-hover-point.png")), "capture native point hover emphasis")
+    hover_list_row(w, 1)
+    check((point_display.GetSelectedColor(), point_display.GetGlyphScale()) == point_style,
+          "moving to another row restores the previous point's exact appearance")
+    check(w.markups.hovered_id == region_id and region_display.GetSelectedColor() != region_style[0]
+          and region_display.GetLineThickness() > region_style[1], "hovering a region row highlights and thickens its image outline")
+    check(window.grab().save(str(OUT / "spatial-hover-region.png")), "capture native polygon hover emphasis")
+    qt.QCursor.setPos(w.markupNameEdit.mapToGlobal(qt.QPoint(5, 5)))
+    slicer.app.sendEvent(w.markupList.viewport(), qt.QEvent(qt.QEvent.Leave))
+    events(.6)
+    check(w.markups.hovered_id is None and
+          (region_display.GetSelectedColor(), region_display.GetLineThickness(), region_display.GetFillOpacity()) == region_style,
+          "leaving the list clears hover and restores the region's exact appearance")
+    check(w.markups.selected_id == region_id and w.markups.capture() == geometry and not w.dirty
+          and w.store.connection.execute("SELECT count(*) FROM revisions").fetchone()[0] == revisions,
+          "hover never changes the selected annotation, coordinates, completion state or saved revisions")
     expected = w.store.get(first_id, "reader-01")["spatial_annotations"]
+    hover_list_row(w, 0)
     check(w.selectCase(1) and w.markups.capture() == [], "switching case removes previous image's spatial nodes")
+    check(w.markups.hovered_id is None, "case switching clears the old image's hover state")
     check(w.markupList.count == 0, "switching to an unannotated case clears the flat list")
     check(w.selectCase(0) and len(w.markups.capture()) == 2, "switching back restores point and polygon")
     check(w.markups.capture()[0]["points_ijk"] == expected[0]["points_ijk"] and
@@ -129,9 +167,11 @@ try:
     w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-01"))
     check(w.changeReader() and len(w.markups.capture()) == 2, "returning to reader restores spatial annotations")
     w.markups.select(region_id)
+    hover_list_row(w, 1)
     w.deleteMarkupButton.click()
     check(len(w.store.get(first_id, "reader-01")["spatial_annotations"]) == 1, "selected polygon deletion persists immediately")
     check(w.markupList.count == 1 and w.markupList.item(0).data(qt.Qt.UserRole) == point_id, "deleting a polygon removes only its list row")
+    check(w.markups.hovered_id is None, "deleting a hovered annotation leaves no stale highlight")
     # Keep an unfinished region as a resumable draft across case switching.
     w.regionButton.click()
     mouse(w, [650, 750, 0])
@@ -179,5 +219,6 @@ except Exception:
         if "window" in globals():
             window.grab().save(str(OUT / "spatial-failure.png"))
     traceback.print_exc()
+qt.QCursor.setPos(CURSOR_BEFORE)
 (OUT / "spatial-result.json").write_text(json.dumps(REPORT, ensure_ascii=False, indent=2))
 slicer.util.exit(0 if REPORT["success"] else 1)

@@ -33,6 +33,10 @@ def put_record(record):
                         record["spatial_annotations"], record["quality"], record["partition"], record["audio"])
 
 
+def confirmation_color():
+    return f.confirmButton.grab().toImage().pixelColor(8, f.confirmButton.height // 2)
+
+
 try:
     previous = json.loads((OUT / "features-result.json").read_text())
     assert previous["success"]
@@ -46,6 +50,9 @@ try:
     check(w.currentRecord["quality"] == expected["quality"] and len(f.audio) == 1 and f.audio == expected["audio"], "quality grade, defect reason and the real microphone recording restore exactly")
     check(w.currentRecord["partition"] == expected["partition"], "corrected lung-mask hashes, landmarks, model provenance and clinician confirmation restore exactly")
     check(f.partitionWidget.property("completionState") == "ready", "a restored confirmed partition is green")
+    color = confirmation_color()
+    check(color.green() > color.red() and color.green() > color.blue(), "the confirmed partition button is painted green")
+    check(f.confirmButton.grab().save(str(OUT / "partition-confirmed-button.png")), "capture the green confirmed button")
     right, left = w.store.assets.lungs(expected["partition"]["masks"])
     actual_right, actual_left = f.partition.masks()
     check(np.array_equal(right, actual_right) and np.array_equal(left, actual_left), "native editable lung masks match the stored original-resolution pixels after restart")
@@ -67,8 +74,13 @@ try:
     check(w.currentRecord["partition"]["state"] == "edited" and w.currentRecord["partition"]["confirmed_at"] is None,
           "editing a previously confirmed partition clears its confirmation and autosaves the new geometry")
     check(f.partitionWidget.property("completionState") == "missing", "editing a confirmed partition immediately turns its area red")
+    color = confirmation_color()
+    check(color.red() > color.green() > color.blue(), "editing a confirmed partition paints its confirmation button yellow again")
+    check(f.confirmButton.grab().save(str(OUT / "partition-pending-button.png")), "capture the yellow confirmation button")
     check(f.confirm_partition(), "clinician can confirm the corrected partition again")
     check(f.partitionWidget.property("completionState") == "ready", "reconfirmation turns the partition green again")
+    color = confirmation_color()
+    check(color.green() > color.red() and color.green() > color.blue(), "confirming the corrected partition paints its button green again")
     # Restore the canonical QA fixture after testing state transitions.
     w.currentRecord = put_record(expected)
     f.restore()

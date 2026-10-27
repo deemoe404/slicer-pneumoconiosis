@@ -16,6 +16,8 @@ class ImageMarkups:
         self.volume = None
         self.selected_id = None
         self.placing_id = None
+        self.hovered_id = None
+        self.hoverStyle = None
         self.updating = False
         self.last_snapshot = []
         self.interaction = slicer.app.applicationLogic().GetInteractionNode()
@@ -37,6 +39,7 @@ class ImageMarkups:
         slicer.mrmlScene.RemoveObserver(self.scene_observer)
 
     def clear(self):
+        self.highlight(None)
         self.updating = True
         try:
             self.finish()
@@ -157,6 +160,51 @@ class ImageMarkups:
         if not self.updating:
             self.selection_changed()
 
+    @staticmethod
+    def _applyDisplayStyle(display, style):
+        if display is None:
+            return
+        token = display.StartModify()
+        try:
+            for name, values in style.items():
+                getattr(display, "Set" + name)(*values)
+        finally:
+            display.EndModify(token)
+
+    def highlight(self, identifier):
+        """Temporarily emphasize a list-hovered markup without selecting or editing it."""
+        if identifier not in self.nodes:
+            identifier = None
+        if identifier == self.hovered_id:
+            return
+        updating = self.updating
+        self.updating = True
+        try:
+            previous = self.nodes.get(self.hovered_id)
+            if previous is not None and self.hoverStyle is not None:
+                self._applyDisplayStyle(previous.GetDisplayNode(), self.hoverStyle)
+            self.hovered_id = None
+            self.hoverStyle = None
+            node = self.nodes.get(identifier)
+            display = node.GetDisplayNode() if node is not None else None
+            if display is None:
+                return
+            self.hoverStyle = {
+                "Color": display.GetColor(), "SelectedColor": display.GetSelectedColor(),
+                "ActiveColor": display.GetActiveColor(), "GlyphScale": (display.GetGlyphScale(),),
+                "TextScale": (display.GetTextScale(),), "LineThickness": (display.GetLineThickness(),),
+                "FillOpacity": (display.GetFillOpacity(),),
+            }
+            self.hovered_id = identifier
+            color = (1.0, 0.25, 0.45)
+            self._applyDisplayStyle(display, {
+                "Color": color, "SelectedColor": color, "ActiveColor": color,
+                "GlyphScale": (display.GetGlyphScale() * 1.8,), "TextScale": (display.GetTextScale() * 1.2,),
+                "LineThickness": (display.GetLineThickness() * 3,), "FillOpacity": (max(.20, display.GetFillOpacity()),),
+            })
+        finally:
+            self.updating = updating
+
     def start(self, kind):
         self.finish()
         prefix = "P" if kind == "point" else "R"
@@ -202,6 +250,8 @@ class ImageMarkups:
         identifier = identifier or self.selected_id
         if identifier not in self.nodes:
             return
+        if identifier == self.hovered_id:
+            self.highlight(None)
         self.finish()
         if identifier not in self.nodes:
             return

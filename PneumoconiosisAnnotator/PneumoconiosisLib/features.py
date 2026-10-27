@@ -408,4 +408,9 @@ class CaseFeatures:
         labels = {"pending_review": "待确认", "edited": "已修正，待重新确认", "confirmed": "分区已确认"}
         self.confirmButton.setText("已确认" if state == "confirmed" else "确认分区")
         self.confirmButton.setToolTip(labels.get(state, "确认当前肺野与六区分界。"))
+        background, foreground, border = ("#2f8750", "#ffffff", "#24703f") if state == "confirmed" else ("#f5c84b", "#4a3600", "#c99b20")
+        self.confirmButton.setStyleSheet(
+            f"QPushButton {{background-color:{background}; color:{foreground}; border:1px solid {border};"
+            "border-radius:4px; padding:4px 8px; font-weight:600;}"
+            "QPushButton:disabled {background-color:#eeeeee; color:#989898; border-color:#c8c8c8;}")
         self.w.updateCompletionControls()
