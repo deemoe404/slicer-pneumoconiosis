@@ -87,8 +87,9 @@ try:
         for dialog in slicer.util.findChildren(slicer.util.mainWindow(), name="PneumoCaseDirectoryDialog"):
             if dialog.isVisible():
                 picker_visits.append(str(dialog.windowTitle))
-                dialog.setDirectory(str(source.parent))
-                dialog.selectFile(str(source))
+                # In Directory mode, accept the current directory. selectFile()
+                # can leave Windows in the parent directory without selecting it.
+                dialog.setDirectory(str(source))
                 dialog.accept()
     selector = qt.QTimer()
     selector.connect("timeout()", select_folder)
@@ -97,7 +98,12 @@ try:
         w.openButton.click()
     finally:
         selector.stop()
-    check(len(picker_visits) == 1 and w.currentRecord is not None and len(w.cases) == 1,
+    last_project = w.dataRoot / "last-project.json"
+    selected = json.loads(last_project.read_text(encoding="utf-8")).get("source") if last_project.is_file() else None
+    REPORT["folder_picker"] = {"expected": str(source), "selected": selected,
+                              "visits": len(picker_visits), "case_count": len(w.cases)}
+    check(bool(picker_visits) and selected is not None and Path(selected).resolve() == source.resolve()
+          and w.currentRecord is not None and len(w.cases) == 1,
           "Open Directory button and its real folder picker import a Unicode archive with Mac metadata")
     check(all("__MACOSX" not in Path(case["file_path"]).parts
               and not Path(case["file_path"]).name.startswith("._") for case in w.cases),
