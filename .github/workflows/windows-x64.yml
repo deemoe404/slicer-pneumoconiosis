@@ -1,0 +1,86 @@
+name: Windows x64
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/windows-x64.yml
+      - PneumoconiosisAnnotator/**
+      - scripts/**
+      - tests/**
+      - requirements-*.txt
+      - mise.toml
+      - docs/img/synthetic-chest.png
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-x64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-pipeline:
+    name: Install, persist, export and infer
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONNOUSERSITE: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install project Python with mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+
+      - name: Verify native Windows x64 Python
+        run: >-
+          python -c "import platform, struct, sys;
+          print(sys.version, platform.platform(), platform.machine());
+          assert sys.platform == 'win32' and struct.calcsize('P') == 8
+          and platform.machine().lower() in ('amd64', 'x86_64')"
+
+      - name: Locate pip download cache
+        id: pip-cache
+        run: '"path=$(python -m pip cache dir)" >> $env:GITHUB_OUTPUT'
+
+      - name: Cache downloads and verified model weights
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ${{ steps.pip-cache.outputs.path }}
+            local-data/models
+          key: windows-x64-${{ hashFiles('mise.toml', 'requirements-*.txt', 'PneumoconiosisAnnotator/PneumoconiosisLib/model_config.py') }}
+
+      - name: Install runtime and verify model SHA256
+        run: python scripts/prepare_runtime.py
+
+      - name: Install synthetic DICOM test dependencies
+        run: '& .\.venv\Scripts\python.exe -m pip install -r requirements-test.txt'
+
+      - name: Check dependency consistency
+        run: '& .\.venv\Scripts\python.exe -m pip check'
+
+      - name: Test core logic
+        run: '& .\.venv\Scripts\python.exe -m unittest discover -s tests -v'
+
+      - name: Test synthetic image through the real model and persistence pipeline
+        run: '& .\.venv\Scripts\python.exe tests/synthetic_pipeline.py --output local-data/qa/windows-x64'
+
+      - name: Upload synthetic test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-x64-synthetic-${{ github.run_attempt }}
+          path: local-data/qa/windows-x64/
+          retention-days: 3
+          if-no-files-found: warn

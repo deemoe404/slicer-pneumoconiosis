@@ -32,7 +32,7 @@
 | 磁盘与网络 | 首次下载约 **273 MB 模型权重**；另需 Slicer、依赖及标注数据空间。准备完成后可离线使用 |
 | 输入 | 扩展名 `.dcm` 的单帧 CR/DX 灰度 DICOM，支持递归扫描子目录 |
 | 录音 | 系统默认麦克风、音频输出及麦克风访问许可 |
-| Windows | 后台路径与依赖有 Windows 分支；尚无 Windows 启动器，GUI 未经实机验证 |
+| Windows | 提供 [Windows x64 后台自动测试](.github/workflows/windows-x64.yml)；尚无 Windows 启动器，GUI 未经实机验证 |
 
 环境分为两层：Slicer 自带 Python 运行界面和影像组件；项目用 **mise → venv → pip** 管理 `.venv` 中的模型及音频依赖，通过后台进程调用。无需向 Slicer Python 或全局 Python 安装这些依赖。直接依赖版本见 [requirements-runtime.txt](requirements-runtime.txt)。
 
@@ -106,7 +106,7 @@ pneumoconiosis-reader-01-<时间>/
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-测试覆盖持久化、完成条件、六区几何、附件校验、录音恢复及导出。Slicer 集成脚本和运行方式见 [开发检查](docs/usage.md#开发检查)；其中的功能检查会实际使用麦克风及本地 DICOM 样本。
+测试覆盖持久化、完成条件、六区几何、附件校验、录音恢复及导出。[Windows x64 自动测试](docs/usage.md#windows-x64-自动测试)使用仓库中的合成胸片，验证依赖安装、真实 CPU 模型推理、跨进程保存恢复和完整导出。Slicer 集成脚本和运行方式见 [开发检查](docs/usage.md#开发检查)；其中的功能检查会实际使用麦克风及本地 DICOM 样本。
 
 ```text
 PneumoconiosisAnnotator/     # Slicer 模块与核心逻辑

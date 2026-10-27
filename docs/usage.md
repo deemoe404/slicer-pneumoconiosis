@@ -147,3 +147,24 @@ cd "$MODULE_PROJECT/local-data"
 ```
 
 文档截图使用 `scripts/capture_docs_preview.py`：将仓库内的 ImageGen 合成 PNG 封装成独立演示 DICOM，在独立项目中调用真实插件并截图。它不打开患者样本、不录音、不改动实际标注项目；合成输入和截图不能用于模型准确率验证。
+
+## Windows x64 自动测试
+
+[工作流](../.github/workflows/windows-x64.yml)使用 GitHub 的 `windows-2022` x64 环境。相关代码、依赖、Python 配置或合成胸片推送到 `main` 时运行，也可在仓库 Actions 页手动执行。相同分支的新运行取消前一轮；仅修改普通文档不会触发。
+
+工作流通过 mise 安装 `mise.toml` 中固定的 Python，再运行正式的环境准备脚本。缓存的是安装包和模型权重，虚拟环境每次重新创建、安装，模型每次校验 SHA256。随后执行依赖一致性检查、核心单元测试和 [合成病例集成检查](../tests/synthetic_pipeline.py)。
+
+集成检查将 ImageGen 合成胸片封装为 DX DICOM，验证中文路径、像素读取、真实后台模型协议、六区掩膜、确认前禁止完成、保存后在新 Python 进程恢复，以及 CSV / JSON / NPZ / WAV 导出与附件哈希。评分、确认和音频由测试明确生成；测试不推导临床评分，也不使用麦克风。
+
+本地可在准备好运行环境后执行同一检查，下面是 Windows PowerShell 命令：
+
+```powershell
+mise exec -- python scripts/prepare_runtime.py
+& .\.venv\Scripts\python.exe -m pip install -r requirements-test.txt
+& .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+& .\.venv\Scripts\python.exe tests/synthetic_pipeline.py --output local-data/qa/windows-x64
+```
+
+运行报告、工作进程日志、合成项目和导出保存在 `local-data/qa/windows-x64/`；CI 将此目录作为 `windows-x64-synthetic-*` 附件保存三天，并在运行摘要中列出检查结果。权重和虚拟环境不进入附件。
+
+该测试覆盖 Windows 后台流程，不安装或启动 Slicer GUI，不代表图形驱动、鼠标交互、屏幕缩放、真实录音或临床分割准确率已经验收。上述项目需在目标 Windows 电脑上另行测试。
