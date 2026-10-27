@@ -27,6 +27,7 @@ from PneumoconiosisLib.features import CaseFeatures
 from PneumoconiosisLib.core import validate_quality
 from PneumoconiosisLib.partition import validate_partition
 from PneumoconiosisLib.grade_slider import GradeRuler, GradeSlider
+from PneumoconiosisLib.viewer_toolbar import ViewerToolbar
 
 
 class PneumoconiosisAnnotator(ScriptedLoadableModule):
@@ -213,14 +214,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.retryButton.connect("clicked()", self.flushSave)
         self.retryButton.hide()
         self.layout.addWidget(self.retryButton)
-        image_row = qt.QHBoxLayout()
-        self.fitButton = qt.QPushButton("适应窗口")
-        self.fitButton.connect("clicked()", self.fitImage)
-        self.resetButton = qt.QPushButton("原始灰度")
-        self.resetButton.connect("clicked()", self.resetDisplay)
-        image_row.addWidget(self.fitButton)
-        image_row.addWidget(self.resetButton)
-        self.layout.addLayout(image_row)
+        self.viewerToolbar = ViewerToolbar(self)
 
         self.layout.addStretch(1)
         self.closeGuard = CloseGuard(self)
@@ -232,15 +226,13 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def enter(self):
         self.entered = True
-        slicer.app.layoutManager().setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutOneUpRedSliceView)
-        slicer.util.setModuleHelpSectionVisible(False)
+        self.viewerToolbar.applyInterface()
         if hasattr(slicer.modules, "DataProbeInstance"):
             annotations = slicer.modules.DataProbeInstance.infoWidget.sliceAnnotations
             annotations.sliceViewAnnotationsEnabled = False
             annotations.updateSliceViewFromGUI()
         red = slicer.app.layoutManager().sliceWidget("Red")
         red.sliceView().setBackgroundColor(qt.QColor("#15191f"))
-        red.sliceController().hide()
 
     def exit(self):
         self.prepareLeave()
@@ -249,6 +241,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
     def cleanup(self):
         self.saveTimer.stop()
         self.prepareLeave()
+        self.viewerToolbar.close()
         self.features.close()
         self.markups.close()
         if getattr(self, "closeGuard", None):
@@ -753,8 +746,9 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def updateControls(self):
         active = self.currentIndex >= 0 and self.volume is not None
-        for control in [self.exportButton, self.caseCombo, self.readerCombo, self.completeButton, self.fitButton, self.resetButton, self.ratingsWidget]:
+        for control in [self.exportButton, self.caseCombo, self.readerCombo, self.completeButton, self.ratingsWidget]:
             control.setEnabled(active)
+        self.viewerToolbar.updateControls()
         self.previousButton.setEnabled(active and self.currentIndex > 0)
         self.nextButton.setEnabled(active and self.currentIndex + 1 < len(self.cases))
         self.updateSpatialControls()

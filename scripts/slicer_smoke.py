@@ -57,6 +57,9 @@ def run():
         w.dataRoot = OUT / "settings"
         check(all(not control.slider.isEnabled() for control in w.gradeSliders.values()),
               "rating sliders stay disabled until a case is loaded")
+        bar = w.viewerToolbar
+        check(all(not button.isEnabled() for button in (bar.windowLevelButton, bar.transformButton, bar.fitButton, bar.resetButton))
+              and bar.fullButton.isEnabled(), "image controls require a case while the full-interface switch remains available")
         check(w.openDirectory(ROOT.parent / "2023Sample", qa_store, "reader-01"), "open current DICOM samples")
         check(len(w.cases) == 11, "11 eligible single-frame DX cases")
         hashes = {c["case_id"]: c["source_sha256"] for c in w.cases}
@@ -76,6 +79,52 @@ def run():
         check([label.text for label in w.gradeRuler.labels] == list(GRADES)
               and all(a.geometry.right() < b.geometry.left() for a, b in zip(w.gradeRuler.labels, w.gradeRuler.labels[1:])),
               "the shared ruler displays all twelve small-grade labels without overlap")
+        viewport = slicer.app.layoutManager().viewport()
+        check(bar.frame.isVisible() and bar.frame.mapToGlobal(qt.QPoint(0, 0)).x() == viewport.mapToGlobal(qt.QPoint(0, 0)).x()
+              and bar.frame.mapToGlobal(qt.QPoint(0, bar.frame.height)).y() <= viewport.mapToGlobal(qt.QPoint(0, 0)).y(),
+              "the compact toolbar sits above and aligns with the image viewport")
+        display = w.volume.GetDisplayNode()
+        original_grey = (display.GetWindow(), display.GetLevel(), display.GetColorNodeID())
+        bar.windowLevelButton.click()
+        check(w.markups.interaction.GetCurrentInteractionMode() == slicer.vtkMRMLInteractionNode.AdjustWindowLevel
+              and bar.windowLevelButton.isChecked() and not bar.transformButton.isChecked(), "window-level button selects the native Slicer mouse mode")
+        red = slicer.app.layoutManager().sliceWidget("Red")
+        view = red.sliceView()
+        centre = (view.width // 2, view.height // 2)
+        slicer.util.clickAndDrag(view, "Left", centre, (centre[0] + 60, centre[1] + 40), steps=12)
+        check((display.GetWindow(), display.GetLevel()) != original_grey[:2], "native left-button dragging changes image window and level")
+        bar.resetButton.click()
+        check((display.GetWindow(), display.GetLevel(), display.GetColorNodeID()) == original_grey, "original-grey button restores the source display settings")
+        bar.transformButton.click()
+        origin = list(red.mrmlSliceNode().GetXYZOrigin())
+        matrix = str(red.mrmlSliceNode().GetSliceToRAS())
+        slicer.util.clickAndDrag(view, "Middle", centre, (centre[0] + 40, centre[1] + 30), steps=10)
+        check(list(red.mrmlSliceNode().GetXYZOrigin()) != origin or str(red.mrmlSliceNode().GetSliceToRAS()) != matrix,
+              "native middle-button dragging pans the radiograph in transform mode")
+        bar.fitButton.click()
+        w.pointButton.click()
+        check(not bar.transformButton.isChecked() and not bar.windowLevelButton.isChecked(), "placing a point clears both viewing-mode indicators")
+        bar.windowLevelButton.click()
+        check(w.markups.placing_id is None and not w.markups.nodes, "returning to a viewing tool safely cancels an unplaced point")
+        bar.transformButton.click()
+        case_id = w.currentRecord["case_id"]
+        volume_id = w.volume.GetID()
+        bar.fullButton.click()
+        events(.2)
+        native_bars = slicer.util.findChildren(widget=slicer.util.mainWindow(), className="QToolBar")
+        check(bar.fullInterface and all(toolbar.isVisible() for toolbar in native_bars) and red.sliceController().isVisible(),
+              "full interface restores native toolbars, module selection and view controls")
+        check(slicer.util.mainWindow().grab().save(str(OUT / "viewer-full-preview.png")), "capture the full Slicer interface with the persistent image toolbar")
+        slicer.util.selectModule("Volumes")
+        check(bar.frame.isVisible() and bar.fullButton.isEnabled(), "the return switch stays available while using a different Slicer module")
+        slicer.app.layoutManager().setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutFourUpView)
+        bar.fullButton.click()
+        events(.2)
+        check(not bar.fullInterface and slicer.util.selectedModule() == "PneumoconiosisAnnotator"
+              and all(not toolbar.isVisible() for toolbar in native_bars) and not red.sliceController().isVisible(),
+              "returning to compact mode restores the annotation module and hides native chrome")
+        check(w.currentRecord["case_id"] == case_id and w.volume.GetID() == volume_id and w._zonesFromUI() == empty_zones(),
+              "viewing modes and full-interface round trip preserve the selected case and all annotations")
         control = w.gradeSliders["RU"]
         mouse(control.slider, qt.QEvent.MouseButtonPress, 0)
         mouse(control.slider, qt.QEvent.MouseButtonRelease, 0)
@@ -180,9 +229,7 @@ def run():
         w.selectCase(0)
         window = slicer.util.mainWindow()
         window.resize(1400, 950)
-        slicer.util.setToolbarsVisible(False)
-        slicer.util.setDataProbeVisible(False)
-        slicer.util.setModulePanelTitleVisible(False)
+        w.viewerToolbar.setFullInterface(False)
         events(0.3)
         w.fitImage()
         events(0.2)

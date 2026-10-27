@@ -16,10 +16,7 @@ def start():
         widget = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
         slicer.util.mainWindow().setWindowTitle("尘肺胸片标注 · 3D Slicer")
         slicer.util.mainWindow().resize(1400, 950)
-        slicer.util.setToolbarsVisible(False)
-        slicer.util.setDataProbeVisible(False)
         slicer.util.setPythonConsoleVisible(False)
-        slicer.util.setModulePanelTitleVisible(False)
         slicer.util.findChild(slicer.util.mainWindow(), "PanelDockWidget").setMinimumWidth(370)
         last_path = ROOT / "local-data" / "last-project.json"
         if last_path.exists():
