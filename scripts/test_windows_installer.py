@@ -88,6 +88,11 @@ def run():
             raise
         gui_path = OUT / "gui/gui-report.json"
         if exit_code or not gui_path.exists():
+            if gui_path.exists():
+                print(gui_path.read_text(encoding="utf-8"), flush=True)
+            logs = sorted((OUT / "gui/application-data/logs").glob("*.log"))
+            if logs:
+                print(logs[-1].read_text(encoding="utf-8", errors="replace")[-12000:], flush=True)
             raise RuntimeError("Installed Slicer GUI failed; inspect application-data/logs and gui-report.json")
         gui = json.loads(gui_path.read_text(encoding="utf-8"))
         check(gui["status"] == "passed", "installed launcher opens the full GUI and completes its offline model/export checks")

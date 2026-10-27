@@ -122,6 +122,7 @@ def main():
     (PAYLOAD / "qa").mkdir()
     shutil.copy2(ROOT / "tests/synthetic_pipeline.py", PAYLOAD / "qa/synthetic_pipeline.py")
     shutil.copy2(ROOT / "packaging/windows/slicer_package_check.py", PAYLOAD / "qa/slicer_package_check.py")
+    shutil.copy2(ROOT / "packaging/windows/render_check.py", PAYLOAD / "qa/render_check.py")
     sys.path.insert(0, str(ROOT / "tests"))
     from synthetic_pipeline import create_dicom
     create_dicom(PAYLOAD / "qa/dicom")

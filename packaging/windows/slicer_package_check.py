@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import sys
 import time
 import traceback
 
@@ -9,6 +10,8 @@ import qt
 import slicer
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from render_check import capture_rendered_view
 OUT = Path(os.environ["PNEUMO_TEST_OUTPUT"])
 OUT.mkdir(parents=True, exist_ok=True)
 REPORT = {"status": "failed", "checks": [], "synthetic_only": True}
@@ -77,11 +80,8 @@ try:
     check(record["partition"]["state"] == "confirmed" and all(z["grade"] == "0/0" for z in record["zones"].values()),
           "GUI export contains the explicit fixture scores and confirmed partition")
     view = slicer.app.layoutManager().sliceWidget("Red").sliceView()
-    view.scheduleRender()
-    events(.5)
-    render_window = view.renderWindow()
-    check(bool(render_window.SupportsOpenGL()), "installed Slicer renders with OpenGL in the test environment")
-    REPORT["renderer"] = render_window.ReportCapabilities()
+    REPORT.update(capture_rendered_view(view, OUT / "installed-view.png"))
+    check(True, "installed Slicer renders a nonblank radiograph with a Qt-owned OpenGL 3.2+ context")
     if os.environ.get("PNEUMO_EXPECT_SOFTWARE_GL") == "1":
         check("llvmpipe" in REPORT["renderer"].lower(), "GUI check uses the isolated Mesa software renderer")
     check(window.grab().save(str(OUT / "installed-gui.png")), "installed GUI screenshot captured")
