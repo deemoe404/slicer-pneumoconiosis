@@ -1,0 +1,93 @@
+name: Windows offline installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-verify:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONNOUSERSITE: '1'
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+
+      - name: Locate pip download cache
+        id: pip-cache
+        run: '"path=$(python -m pip cache dir)" >> $env:GITHUB_OUTPUT'
+
+      - name: Cache package downloads and model weights
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ${{ steps.pip-cache.outputs.path }}
+            local-data/models
+            local-data/windows-downloads
+          key: windows-installer-${{ hashFiles('mise.toml', 'requirements-*.txt', 'packaging/windows/inputs.json', 'PneumoconiosisAnnotator/PneumoconiosisLib/model_config.py') }}
+
+      - name: Prepare build runtime
+        run: python scripts/prepare_runtime.py
+
+      - name: Install synthetic test dependencies
+        run: '& .\.venv\Scripts\python.exe -m pip install -r requirements-test.txt'
+
+      - name: Test application core
+        run: '& .\.venv\Scripts\python.exe -m unittest discover -s tests -v'
+
+      - name: Build the offline installer
+        run: '& .\.venv\Scripts\python.exe scripts/build_windows_installer.py'
+
+      - name: Free the build-only virtual environment
+        run: Remove-Item .venv -Recurse -Force
+
+      - name: Verify offline installation, GUI, backend, reinstall and uninstall
+        run: '& .\local-data\windows-build\PneumoconiosisAnnotator\runtime\python\python.exe -I -B -X utf8 scripts/test_windows_installer.py'
+
+      - name: Save installer in an unpublished release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $build = Get-Content local-data/windows-release/build-manifest.json -Raw | ConvertFrom-Json
+          $tag = "windows-v$($build.version)-$($build.commit.Substring(0,7))-r${{ github.run_number }}"
+          $notes = @"
+          Windows x64 offline installer for the pneumoconiosis research annotator.
+
+          Commit: $($build.commit)
+          Includes the pinned Slicer build, a standalone Python runtime, CPU model and audio dependencies, and verified model weights.
+          Installer, offline backend, software-rendered GUI smoke check, reinstall and uninstall checks passed on Windows Server 2022 x64.
+          Annotation data lives outside the program installation directory and is retained on uninstall.
+          The installer is unsigned. Physical GPU, microphone and clinician acceptance remain separate.
+          "@
+          $notes | Set-Content local-data/windows-release/release-notes.md -Encoding utf8
+          $assets = Get-ChildItem local-data/windows-release -File | Where-Object { $_.Name -ne 'release-notes.md' } | ForEach-Object { $_.FullName }
+          gh release create $tag @assets --repo "${{ github.repository }}" --target "${{ github.sha }}" --draft --title "Windows $($build.version) · $($build.commit.Substring(0,7))" --notes-file local-data/windows-release/release-notes.md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "Draft release: $tag" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload small failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-installer-diagnostics-${{ github.run_attempt }}
+          path: |
+            local-data/qa/windows-installer/
+            local-data/windows-release/build-manifest.json
+          retention-days: 3
+          if-no-files-found: warn

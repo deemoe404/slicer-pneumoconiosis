@@ -28,6 +28,7 @@ from PneumoconiosisLib.core import validate_quality
 from PneumoconiosisLib.partition import validate_partition
 from PneumoconiosisLib.grade_slider import GradeRuler, GradeSlider
 from PneumoconiosisLib.viewer_toolbar import ViewerToolbar
+from PneumoconiosisLib.runtime import data_directory
 
 
 class PneumoconiosisAnnotator(ScriptedLoadableModule):
@@ -93,7 +94,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.entered = False
         self.spatialState = []
         self.spatialUpdating = False
-        self.dataRoot = ROOT / "local-data"
+        self.dataRoot = data_directory(ROOT)
         self.saveTimer = qt.QTimer()
         self.saveTimer.setSingleShot(True)
         self.saveTimer.setInterval(450)

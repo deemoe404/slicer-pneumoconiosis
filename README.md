@@ -32,11 +32,15 @@
 | 磁盘与网络 | 首次下载约 **273 MB 模型权重**；另需 Slicer、依赖及标注数据空间。准备完成后可离线使用 |
 | 输入 | 扩展名 `.dcm` 的单帧 CR/DX 灰度 DICOM，支持递归扫描子目录 |
 | 录音 | 系统默认麦克风、音频输出及麦克风访问许可 |
-| Windows | 提供 [Windows x64 后台自动测试](.github/workflows/windows-x64.yml)；尚无 Windows 启动器，GUI 未经实机验证 |
+| Windows | Windows 11 x64；提供 [离线安装包构建与安装检查](.github/workflows/windows-installer.yml)及[后台自动测试](.github/workflows/windows-x64.yml)。云端界面检查使用软件渲染；目标电脑的显卡和麦克风需单独验收 |
 
 环境分为两层：Slicer 自带 Python 运行界面和影像组件；项目用 **mise → venv → pip** 管理 `.venv` 中的模型及音频依赖，通过后台进程调用。无需向 Slicer Python 或全局 Python 安装这些依赖。直接依赖版本见 [requirements-runtime.txt](requirements-runtime.txt)。
 
 ## 快速开始
+
+**Windows 使用离线安装包：**下载 `PneumoconiosisAnnotator-…-Setup.exe`，双击并允许管理员安装，之后从桌面「尘肺胸片标注」启动。包内已带 Slicer、独立 Python、模型与录音依赖和权重，无需另装开发环境。安装包及校验值由手动构建工作流保存到未发布的版本草稿；详见 [Windows 离线安装](docs/usage.md#windows-离线安装)。
+
+**macOS 或源码开发：**
 
 先安装 [3D Slicer](https://download.slicer.org/) 和 [mise](https://mise.jdx.dev/getting-started.html)，下载本仓库并进入项目目录。
 
@@ -96,7 +100,7 @@ pneumoconiosis-reader-01-<时间>/
 
 ## 隐私与数据位置
 
-原始 DICOM 只读，导出不打包原片。实际项目位于 `local-data/projects/`，模型位于 `local-data/models/`，功能测试数据位于 `local-data/qa/`；这些目录不纳入 Git。结构化导出不包含源文件路径、患者姓名字段或原始 DICOM UID，但录音保留原声，不自动转写或脱敏。
+原始 DICOM 只读，导出不打包原片。源码运行的实际项目位于 `local-data/projects/`，模型位于 `local-data/models/`，功能测试数据位于 `local-data/qa/`；这些目录不纳入 Git。Windows 安装版将记录和录音存入 `%LOCALAPPDATA%/PneumoconiosisAnnotator/`，与程序分离，重装和卸载保留数据。结构化导出不包含源文件路径、患者姓名字段或原始 DICOM UID，但录音保留原声，不自动转写或脱敏。
 
 备份时关闭模块，完整保存项目目录及原始 DICOM；只备份 SQLite 文件会遗漏录音和掩膜。具体目录说明见 [本地项目与备份](docs/usage.md#本地项目与备份)。
 

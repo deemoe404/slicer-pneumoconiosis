@@ -34,6 +34,7 @@ from PneumoconiosisLib.audio_files import WaveRecording
 from PneumoconiosisLib.core import AnnotationStore, GRADE_CODES, ZONES, empty_zones, file_sha256, scan_cases, utc_now
 from PneumoconiosisLib.model_config import WEIGHTS_SHA256
 from PneumoconiosisLib.partition import zone_map
+from PneumoconiosisLib.runtime import worker_command
 
 
 def check(condition, message, checks):
@@ -141,7 +142,7 @@ def run(output, report):
     job = {"id": uuid.uuid4().hex, "case_id": cases[0]["case_id"], "reader_id": "reader-01",
            "source_sha256": cases[0]["source_sha256"], "project": str(project), "input": str(directory / "model-input.npy")}
     started = time.monotonic()
-    worker = subprocess.run([sys.executable, str(ROOT / "scripts/feature_worker.py"), "model"],
+    worker = subprocess.run(worker_command(ROOT, "model"),
                             input=json.dumps(job, ensure_ascii=True) + "\n", capture_output=True,
                             text=True, encoding="utf-8", timeout=180, cwd=ROOT)
     (directory / "model.stdout.jsonl").write_text(worker.stdout, encoding="utf-8")

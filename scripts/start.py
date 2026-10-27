@@ -14,13 +14,14 @@ def start():
     try:
         slicer.util.selectModule("PneumoconiosisAnnotator")
         widget = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
+        data_root = widget.dataRoot
         slicer.util.mainWindow().setWindowTitle("尘肺胸片标注 · 3D Slicer")
         slicer.util.mainWindow().resize(1400, 950)
         slicer.util.setPythonConsoleVisible(False)
         slicer.util.findChild(slicer.util.mainWindow(), "PanelDockWidget").setMinimumWidth(370)
-        last_path = ROOT / "local-data" / "last-project.json"
+        last_path = data_root / "last-project.json"
         if last_path.exists():
-            last = json.loads(last_path.read_text())
+            last = json.loads(last_path.read_text(encoding="utf-8"))
             widget.openDirectory(last["source"], projectDirectory=last["project"])
         else:
             sample = ROOT.parent / "2023Sample"
@@ -33,12 +34,12 @@ def start():
                   "audio_control_ready": widget.features.recordButton.isEnabled(),
                   "partition_state": widget.features.partition.state["state"] if widget.features.partition.state else None,
                   "visible_zone_count": widget.features.partition.overlay.GetSegmentation().GetNumberOfSegments() if widget.features.partition.overlay else 0}
-        (ROOT / "local-data").mkdir(parents=True, exist_ok=True)
-        (ROOT / "local-data" / "startup-status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2))
+        data_root.mkdir(parents=True, exist_ok=True)
+        (data_root / "startup-status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
         if os.environ.get("PNEUMO_CAPTURE_PREVIEW") == "1":
             def preview():
                 widget.fitImage()
-                slicer.util.mainWindow().grab().save(str(ROOT / "local-data" / "launch-preview.png"))
+                slicer.util.mainWindow().grab().save(str(data_root / "launch-preview.png"))
             qt.QTimer.singleShot(800, preview)
     except Exception as exc:
         logging.exception("Cannot initialize pneumoconiosis reader")

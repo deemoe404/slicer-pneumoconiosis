@@ -1,0 +1,21 @@
+{
+  "version": "0.1.0",
+  "slicer": {
+    "filename": "Slicer-5.13.0-r35392-win-x64.exe",
+    "url": "https://download.slicer.org/bitstream/6ad869ba32e5d6bfbf6bbd95",
+    "sha512": "99943f8aa828cf6981e1ce0d6ddcb5cdf3ffa8c1ccd5b45a4fd6291cf82b40fd2df47d78412a2316f9e9c8d26f8825a8b3f525e4b9cd4cb16c9d0a3f25ef5862",
+    "version": "5.13.0",
+    "revision": "35392",
+    "source": "https://download.slicer.org/?date=2026-10-22&stability=nightly&os=win&arch=amd64"
+  },
+  "inno": {
+    "filename": "innosetup-7.1.0-x64.exe",
+    "url": "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe",
+    "sha256": "0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f"
+  },
+  "mesa_test_only": {
+    "filename": "mesa3d-26.2.4-release-msvc.7z",
+    "url": "https://github.com/pal1000/mesa-dist-win/releases/download/26.2.4/mesa3d-26.2.4-release-msvc.7z",
+    "sha256": "351fc8c8b695878ffb3eaa044b3ead08672a48b1a045e3c3e3975811df0f6695"
+  }
+}

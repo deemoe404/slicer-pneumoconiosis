@@ -100,6 +100,8 @@
 
 ## 本地项目与备份
 
+下面是源码运行目录。Windows 安装版把同样的项目和附件放在 `%LOCALAPPDATA%/PneumoconiosisAnnotator/`，通常是 `C:\Users\<用户名>\AppData\Local\PneumoconiosisAnnotator\`；模型和程序位于安装目录内，只读使用。
+
 ```text
 local-data/
 ├── last-project.json        # 上次打开的源目录与项目目录
@@ -168,3 +170,19 @@ mise exec -- python scripts/prepare_runtime.py
 运行报告、工作进程日志、合成项目和导出保存在 `local-data/qa/windows-x64/`；CI 将此目录作为 `windows-x64-synthetic-*` 附件保存三天，并在运行摘要中列出检查结果。权重和虚拟环境不进入附件。
 
 该测试覆盖 Windows 后台流程，不安装或启动 Slicer GUI，不代表图形驱动、鼠标交互、屏幕缩放、真实录音或临床分割准确率已经验收。上述项目需在目标 Windows 电脑上另行测试。
+
+## Windows 离线安装
+
+安装包面向 Windows 11 x64。下载 `PneumoconiosisAnnotator-<版本>-windows-x64-<提交>-Setup.exe` 及对应 `.sha256` 校验文件，双击安装包并允许管理员安装，安装完成后从桌面「尘肺胸片标注」进入。日常使用不需要管理员权限，也无需安装 Python、mise 或额外的 Slicer。模型权重及依赖均随包提供，安装和模型推理可离线执行。
+
+默认程序目录是 `C:\Program Files\PneumoconiosisAnnotator`。Slicer 的程序路径须使用英文，病例和用户数据目录可以使用中文。首次打开后选择自己的胸片目录和读者编号；程序不会把合成病例当成真实标注项目。
+
+标注数据位于 `%LOCALAPPDATA%/PneumoconiosisAnnotator/`。重装和卸载程序保留该目录；备份及原始 DICOM 的要求与源码版相同。启动日志在其 `logs/` 子目录内。安装包尚未做代码签名，Windows 可能显示未知发布者提示。
+
+### 构建与安装验证
+
+[Windows offline installer](../.github/workflows/windows-installer.yml)工作流只在手动执行时构建大安装包，普通代码推送仍运行轻量后台检查。固定 Slicer、Inno Setup 和测试用 Mesa 的版本、下载地址与哈希见 [inputs.json](../packaging/windows/inputs.json)。后台环境使用 mise 提供的可迁移 standalone Python，加上项目依赖；不会复制开发环境的 venv 启动器。
+
+流水线先运行核心测试，再生成安装包，安装到新目录，核对全部程序文件哈希，并对已安装的后台进程阻断出站网络，运行合成病例。随后通过正式启动器打开安装后的 Slicer，检查真实 QProcess 模型推理、六区、确认、保存和导出，最后验证重装与卸载保留外部数据。界面检查临时使用 Mesa 软件 OpenGL，Mesa 不包含在交付安装包中；真实显卡、麦克风和医生验收另行进行。
+
+成功产物包括单文件 EXE、SHA256、构建清单和检查报告，保存为 GitHub Release **未发布草稿**，以减少大型 Actions 附件存储。失败诊断作为短期 Actions 附件保存。产物不包含真实胸片、标注库或录音，唯一影像样例为 ImageGen 合成素材。

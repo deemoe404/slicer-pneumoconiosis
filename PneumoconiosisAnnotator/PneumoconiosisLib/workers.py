@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import qt
+from .runtime import worker_command
 
 
 class Worker:
@@ -21,17 +22,13 @@ class Worker:
             environment.remove(name)
         environment.insert("PYTHONNOUSERSITE", "1")
         environment.insert("PYTHONUNBUFFERED", "1")
+        environment.insert("PYTHONUTF8", "1")
         self.process.setProcessEnvironment(environment)
         self.process.connect("readyReadStandardOutput()", self.read)
         self.process.connect("readyReadStandardError()", self.read_errors)
         self.process.connect("finished(int,QProcess::ExitStatus)", self.ended)
-        python = self.root / ".venv" / ("Scripts/python.exe" if __import__("os").name == "nt" else "bin/python")
-        if not python.exists():
-            raise RuntimeError("功能组件尚未准备，请先运行项目的运行环境准备脚本。")
-        arguments = [str(self.root / "scripts" / "feature_worker.py"), mode]
-        if job is not None:
-            arguments.append(json.dumps(job, ensure_ascii=True))
-        self.process.start(str(python), arguments)
+        command = worker_command(self.root, mode, job)
+        self.process.start(command[0], command[1:])
         if not self.process.waitForStarted(5000):
             raise RuntimeError("后台功能启动失败：" + self.process.errorString())
 

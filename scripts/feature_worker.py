@@ -27,7 +27,8 @@ class LungModel:
         import torch
         import torchxrayvision as xrv
         from PneumoconiosisLib.model_config import WEIGHTS_FILE, WEIGHTS_URL, WEIGHTS_SHA256
-        cache = ROOT / "local-data" / "models"
+        from PneumoconiosisLib.runtime import model_directory
+        cache = model_directory(ROOT)
         path = cache / WEIGHTS_FILE
         if not path.exists():
             raise RuntimeError("肺野模型尚未准备，请先运行模型准备脚本。")
