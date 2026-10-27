@@ -8,6 +8,8 @@ class ViewerToolbar:
     def __init__(self, widget):
         self.w = widget
         self.fullInterface = False
+        self.observedVolume = None
+        self.displayObserver = None
         self.interaction = slicer.app.applicationLogic().GetInteractionNode()
         central = slicer.util.mainWindow().centralWidget()
         self.viewport = slicer.app.layoutManager().viewport()
@@ -38,6 +40,12 @@ class ViewerToolbar:
         self.windowLevelButton = self._button(row, "窗宽窗位", "在胸片上按住左键拖动，调整明暗和对比度。")
         self.windowLevelButton.setCheckable(True)
         self.windowLevelButton.connect("clicked()", lambda: self.setMouseMode(slicer.vtkMRMLInteractionNode.AdjustWindowLevel))
+        self.windowLevelLabel = qt.QLabel("窗宽 —  窗位 —")
+        self.windowLevelLabel.setMinimumWidth(160)
+        self.windowLevelLabel.setStyleSheet("color:#c2ceda; padding:0 4px;")
+        self.windowLevelLabel.setAccessibleName("当前窗宽和窗位")
+        self.windowLevelLabel.setToolTip("实时读取当前胸片的显示参数，仅影响显示。")
+        row.addWidget(self.windowLevelLabel)
         self.transformButton = self._button(row, "缩放 / 平移", "滚轮缩放；按住鼠标中键拖动平移。")
         self.transformButton.setCheckable(True)
         self.transformButton.connect("clicked()", lambda: self.setMouseMode(slicer.vtkMRMLInteractionNode.ViewTransform))
@@ -80,7 +88,26 @@ class ViewerToolbar:
         active = self.w.volume is not None and self.w.currentRecord is not None
         for button in (self.windowLevelButton, self.transformButton, self.fitButton, self.resetButton):
             button.setEnabled(active)
+        if self.observedVolume is not self.w.volume:
+            self._stopObservingDisplay()
+            self.observedVolume = self.w.volume
+            if self.observedVolume is not None:
+                self.displayObserver = self.observedVolume.AddObserver(
+                    slicer.vtkMRMLDisplayableNode.DisplayModifiedEvent, self.updateWindowLevel)
+        self.updateWindowLevel()
         self.updateMouseMode()
+
+    def updateWindowLevel(self, *_):
+        display = self.observedVolume.GetDisplayNode() if self.observedVolume is not None else None
+        text = f"窗宽 {display.GetWindow():.1f}  窗位 {display.GetLevel():.1f}" if display else "窗宽 —  窗位 —"
+        if self.windowLevelLabel.text != text:
+            self.windowLevelLabel.setText(text)
+
+    def _stopObservingDisplay(self):
+        if self.observedVolume is not None and self.displayObserver is not None:
+            self.observedVolume.RemoveObserver(self.displayObserver)
+        self.observedVolume = None
+        self.displayObserver = None
 
     def _showNativeControls(self, visible):
         slicer.util.setToolbarsVisible(visible)
@@ -109,6 +136,7 @@ class ViewerToolbar:
         self.applyInterface()
 
     def close(self):
+        self._stopObservingDisplay()
         self.interaction.RemoveObserver(self.observer)
         self._showNativeControls(True)
         self.stack.removeWidget(self.viewport)

@@ -60,6 +60,7 @@ def run():
         bar = w.viewerToolbar
         check(all(not button.isEnabled() for button in (bar.windowLevelButton, bar.transformButton, bar.fitButton, bar.resetButton))
               and bar.fullButton.isEnabled(), "image controls require a case while the full-interface switch remains available")
+        check(bar.windowLevelLabel.text == "窗宽 —  窗位 —", "window-level readout is empty before loading a radiograph")
         check(w.openDirectory(ROOT.parent / "2023Sample", qa_store, "reader-01"), "open current DICOM samples")
         check(len(w.cases) == 11, "11 eligible single-frame DX cases")
         hashes = {c["case_id"]: c["source_sha256"] for c in w.cases}
@@ -85,6 +86,8 @@ def run():
               "the compact toolbar sits above and aligns with the image viewport")
         display = w.volume.GetDisplayNode()
         original_grey = (display.GetWindow(), display.GetLevel(), display.GetColorNodeID())
+        check(bar.windowLevelLabel.text == f"窗宽 {original_grey[0]:.1f}  窗位 {original_grey[1]:.1f}",
+              "the toolbar reads the loaded image's actual Slicer window and level")
         bar.windowLevelButton.click()
         check(w.markups.interaction.GetCurrentInteractionMode() == slicer.vtkMRMLInteractionNode.AdjustWindowLevel
               and bar.windowLevelButton.isChecked() and not bar.transformButton.isChecked(), "window-level button selects the native Slicer mouse mode")
@@ -93,8 +96,21 @@ def run():
         centre = (view.width // 2, view.height // 2)
         slicer.util.clickAndDrag(view, "Left", centre, (centre[0] + 60, centre[1] + 40), steps=12)
         check((display.GetWindow(), display.GetLevel()) != original_grey[:2], "native left-button dragging changes image window and level")
+        check(bar.windowLevelLabel.text == f"窗宽 {display.GetWindow():.1f}  窗位 {display.GetLevel():.1f}",
+              "native mouse dragging updates the numeric readout immediately")
+        display.SetWindowLevel(1234.5, 678.9)
+        check(bar.windowLevelLabel.text == "窗宽 1234.5  窗位 678.9", "changes made through the native display node also synchronize without polling")
         bar.resetButton.click()
         check((display.GetWindow(), display.GetLevel(), display.GetColorNodeID()) == original_grey, "original-grey button restores the source display settings")
+        check(bar.windowLevelLabel.text == f"窗宽 {original_grey[0]:.1f}  窗位 {original_grey[1]:.1f}",
+              "restoring original grey also restores the displayed numeric values")
+        w.selectCase(1)
+        next_display = w.volume.GetDisplayNode()
+        next_text = f"窗宽 {next_display.GetWindow():.1f}  窗位 {next_display.GetLevel():.1f}"
+        display.SetWindowLevel(321.0, 123.0)
+        check(bar.windowLevelLabel.text == next_text, "case switching rebinds the readout and ignores changes on the old image")
+        w.selectCase(0)
+        display = w.volume.GetDisplayNode()
         bar.transformButton.click()
         origin = list(red.mrmlSliceNode().GetXYZOrigin())
         matrix = str(red.mrmlSliceNode().GetSliceToRAS())
