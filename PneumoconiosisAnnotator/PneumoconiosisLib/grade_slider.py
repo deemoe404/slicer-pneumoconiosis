@@ -83,7 +83,7 @@ class GradeSlider(qt.QWidget):
         self.notScorableButton.setText("不可评")
         self.notScorableButton.setCheckable(True)
         self.notScorableButton.setAutoRaise(True)
-        self.notScorableButton.setToolTip(zone_name + "：不可评价，完成时需注明原因。")
+        self.notScorableButton.setToolTip(zone_name + "：记为不可评价；如需说明，可录入语音备注。")
         self.notScorableButton.connect("clicked()", lambda: self.choose_state("not_scorable"))
         layout.addWidget(self.notScorableButton)
         self.slider.connect("sliderMoved(int)", self.preview)

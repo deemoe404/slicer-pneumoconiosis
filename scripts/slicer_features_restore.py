@@ -29,7 +29,7 @@ def events(seconds=.6):
 
 
 def put_record(record):
-    return w.store.save(record["case_id"], record["reader_id"], record["zones"], record["note"], record["status"], record["display"],
+    return w.store.save(record["case_id"], record["reader_id"], record["zones"], record["status"], record["display"],
                         record["spatial_annotations"], record["quality"], record["partition"], record["audio"])
 
 

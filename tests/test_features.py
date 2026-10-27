@@ -52,7 +52,7 @@ class FeatureTests(unittest.TestCase):
     def test_quality_all_four_levels_persist_and_blank_stays_unread(self):
         self.assertIsNone(self.store.get("CXR-0", "r")["quality"]["grade"])
         for grade in range(1, 5):
-            record = self.store.save("CXR-0", "r", empty_zones(), "", quality={"grade": grade, "reason": "曝光偏白"})
+            record = self.store.save("CXR-0", "r", empty_zones(), quality={"grade": grade, "reason": "曝光偏白"})
             self.assertEqual(record["quality"], {"grade": grade, "reason": "曝光偏白"})
         self.assertIsNone(self.store.get("CXR-0", "other")["quality"]["grade"])
         self.assertIsNone(self.store.get("CXR-1", "r")["quality"]["grade"])
@@ -62,12 +62,12 @@ class FeatureTests(unittest.TestCase):
 
     def test_completion_requires_quality_but_no_defect_reason(self):
         with self.assertRaisesRegex(ValueError, "整片质量"):
-            self.store.save("CXR-0", "r", self.scored, "", "complete")
+            self.store.save("CXR-0", "r", self.scored, "complete")
         for grade in range(1, 5):
-            record = self.store.save("CXR-0", "r", self.scored, "", "complete", quality={"grade": grade, "reason": ""})
+            record = self.store.save("CXR-0", "r", self.scored, "complete", quality={"grade": grade, "reason": ""})
             self.assertEqual(record["status"], "complete")
             self.assertEqual(record["quality"], {"grade": grade, "reason": ""})
-        record = self.store.save("CXR-0", "r", self.scored, "", "complete", quality={"grade": 3, "reason": "吸气不足"})
+        record = self.store.save("CXR-0", "r", self.scored, "complete", quality={"grade": 3, "reason": "吸气不足"})
         self.assertEqual(record["quality"]["reason"], "吸气不足")
 
     def test_six_zones_use_apex_to_dome_and_cover_exactly_the_lung_masks(self):
@@ -93,16 +93,16 @@ class FeatureTests(unittest.TestCase):
     def test_clinician_confirmation_and_source_binding_are_enforced(self):
         partition = self.partition()
         with self.assertRaisesRegex(ValueError, "确认分区"):
-            self.store.save("CXR-0", "r", self.scored, "", "complete", quality={"grade": 1}, partition=partition)
+            self.store.save("CXR-0", "r", self.scored, "complete", quality={"grade": 1}, partition=partition)
         partition.update(state="confirmed", confirmed_at="2026-10-25T00:00:00+00:00", confirmed_by="r")
-        record = self.store.save("CXR-0", "r", self.scored, "", "complete", quality={"grade": 1}, partition=partition)
+        record = self.store.save("CXR-0", "r", self.scored, "complete", quality={"grade": 1}, partition=partition)
         self.assertEqual(record["partition"]["state"], "confirmed")
         self.assertEqual(set(record["partition"]["pixel_counts"]), set("123456"))
         with self.assertRaisesRegex(ValueError, "原始胸片"):
-            self.store.save("CXR-1", "r", empty_zones(), "", partition=partition)
+            self.store.save("CXR-1", "r", empty_zones(), partition=partition)
         self.assertIsNone(self.store.get("CXR-0", "other")["partition"])
         with self.assertRaisesRegex(ValueError, "当前读者"):
-            self.store.save("CXR-0", "other", empty_zones(), "", partition=partition)
+            self.store.save("CXR-0", "other", empty_zones(), partition=partition)
 
     def test_corrected_masks_do_not_overwrite_retained_machine_result(self):
         partition = self.partition()
@@ -110,22 +110,22 @@ class FeatureTests(unittest.TestCase):
         corrected[20:25, 10:15] = False
         partition["masks"] = self.store.assets.put_lungs(corrected, self.left)
         partition["state"] = "edited"
-        saved = self.store.save("CXR-0", "r", empty_zones(), "", partition=partition)
+        saved = self.store.save("CXR-0", "r", empty_zones(), partition=partition)
         self.assertNotEqual(saved["partition"]["masks"], saved["partition"]["baseline"])
         np.testing.assert_array_equal(self.store.assets.lungs(partition["baseline"])[0], self.right)
         np.testing.assert_array_equal(self.store.assets.lungs(partition["masks"])[0], corrected)
 
     def test_bad_geometry_or_corrupt_asset_cannot_replace_a_saved_partition(self):
         partition = self.partition()
-        original = self.store.save("CXR-0", "r", empty_zones(), "", partition=partition)
+        original = self.store.save("CXR-0", "r", empty_zones(), partition=partition)
         invalid = copy.deepcopy(partition)
         invalid["landmarks"]["R"]["dome"][1] = 5
         with self.assertRaisesRegex(ValueError, "膈顶"):
-            self.store.save("CXR-0", "r", empty_zones(), "", partition=invalid)
+            self.store.save("CXR-0", "r", empty_zones(), partition=invalid)
         self.assertEqual(self.store.get("CXR-0", "r")["partition"], original["partition"])
         resolve_asset(self.directory, partition["masks"]["path"]).write_bytes(b"corrupt")
         with self.assertRaisesRegex(ValueError, "校验"):
-            self.store.save("CXR-0", "r", empty_zones(), "", partition=partition)
+            self.store.save("CXR-0", "r", empty_zones(), partition=partition)
         for path in ("../outside", "assets/../../outside", "/tmp/file", "C:\\file", "assets/../escape"):
             with self.assertRaises(ValueError):
                 resolve_asset(self.directory, path)
@@ -133,10 +133,10 @@ class FeatureTests(unittest.TestCase):
     def test_recording_ownership_and_recovery_after_failed_database_write(self):
         clip = self.clip()
         with self.assertRaisesRegex(ValueError, "不属于"):
-            self.store.save("CXR-0", "other", empty_zones(), "", audio=[clip])
+            self.store.save("CXR-0", "other", empty_zones(), audio=[clip])
         self.store.connection.executescript("CREATE TRIGGER reject_audio BEFORE INSERT ON annotations BEGIN SELECT RAISE(ABORT, 'QA failed write'); END;")
         with self.assertRaises(sqlite3.DatabaseError):
-            self.store.save("CXR-0", "r", empty_zones(), "", audio=[clip])
+            self.store.save("CXR-0", "r", empty_zones(), audio=[clip])
         self.store.connection.execute("DROP TRIGGER reject_audio")
         self.assertEqual(self.store.recover_audio(), 1)
         self.assertEqual(self.store.get("CXR-0", "r")["audio"][0]["id"], clip["id"])
@@ -155,7 +155,7 @@ class FeatureTests(unittest.TestCase):
 
     def test_export_bundle_contains_real_wav_masks_zone_map_and_quality(self):
         clip, partition = self.clip(), self.partition()
-        record = self.store.save("CXR-0", "r", empty_zones(), "", quality={"grade": 2, "reason": "轻微旋转"}, partition=partition, audio=[clip])
+        record = self.store.save("CXR-0", "r", empty_zones(), quality={"grade": 2, "reason": "轻微旋转"}, partition=partition, audio=[clip])
         paths = self.store.export(self.directory / "exports", ["CXR-0", "CXR-1"], "r")
         package = json.loads(paths[1].read_text())
         exported = package["records"][0]

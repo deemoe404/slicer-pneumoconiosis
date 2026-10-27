@@ -27,7 +27,7 @@ class PersistenceTests(unittest.TestCase):
     def test_every_grade_survives_restart_as_text(self):
         for grade in GRADES:
             zones = {z: {"state": "scored", "grade": grade} for z in ZONES}
-            self.store.save("CXR-0", "reader-01", zones, "", "complete", quality={"grade": 1, "reason": ""})
+            self.store.save("CXR-0", "reader-01", zones, "complete", quality={"grade": 1, "reason": ""})
             self.store.close()
             self.store = AnnotationStore(self.directory)
             self.assertEqual(self.store.get("CXR-0", "reader-01")["zones"], zones)
@@ -35,21 +35,23 @@ class PersistenceTests(unittest.TestCase):
     def test_unread_and_not_scorable_are_not_zero(self):
         zones = empty_zones()
         zones["RU"] = {"state": "not_scorable", "grade": None}
-        self.store.save("CXR-0", "reader-01", zones, "右上遮挡")
+        self.store.save("CXR-0", "reader-01", zones)
         read = self.store.get("CXR-0", "reader-01")
         self.assertIsNone(read["zones"]["RU"]["grade"])
         self.assertEqual(read["zones"]["RM"]["state"], "unread")
         with self.assertRaises(ValueError):
-            validate_complete(zones, "右上遮挡")
+            validate_complete(zones)
         zones = {z: {"state": "not_scorable", "grade": None} for z in ZONES}
-        with self.assertRaises(ValueError):
-            validate_complete(zones, "")
-        validate_complete(zones, "全片模糊")
+        validate_complete(zones)
+        saved = self.store.save("CXR-0", "reader-01", zones, "complete", quality={"grade": 4})
+        self.assertEqual(saved["status"], "complete")
+        self.assertEqual(saved["audio"], [])
+        self.assertNotIn("note", saved)
 
     def test_readers_and_cases_remain_independent(self):
         zones = empty_zones()
         zones["LU"] = {"state": "scored", "grade": "2/3"}
-        self.store.save("CXR-0", "reader-01", zones, "note")
+        self.store.save("CXR-0", "reader-01", zones)
         self.assertEqual(self.store.get("CXR-0", "reader-02")["zones"], empty_zones())
         self.assertEqual(self.store.get("CXR-1", "reader-01")["zones"], empty_zones())
 
@@ -58,30 +60,32 @@ class PersistenceTests(unittest.TestCase):
         zones["RU"] = {"state": "not_scorable", "grade": None}
         shape = self.spatial(points=[[100, 100, 0], [200, 200, 0]])
         pending = {"state": "pending_review"}
-        issues = completion_issues(zones, "  ", None, [shape], pending, self.cases[0])
-        self.assertEqual(set(issues), {"ratings", "note", "quality", "spatial", "partition"})
+        issues = completion_issues(zones, None, [shape], pending, self.cases[0])
+        self.assertEqual(set(issues), {"ratings", "quality", "spatial", "partition"})
         self.assertEqual(zones["RM"]["state"], "unread")
         for zone in ZONES[1:]:
             zones[zone] = {"state": "scored", "grade": "0/0"}
-        issues = completion_issues(zones, "右上遮挡", {"grade": 4}, [self.spatial()], None, self.cases[0])
+        issues = completion_issues(zones, {"grade": 4}, [self.spatial()], None, self.cases[0])
         self.assertEqual(issues, {})
-        self.store.save("CXR-0", "reader-01", zones, "右上遮挡", "complete", quality={"grade": 4})
+        self.store.save("CXR-0", "reader-01", zones, "complete", quality={"grade": 4})
         self.assertEqual(self.store.get("CXR-0", "reader-01")["status"], "complete")
 
     def test_invalid_input_never_overwrites_saved_record(self):
-        self.store.save("CXR-0", "r", empty_zones(), "original")
+        self.store.save("CXR-0", "r", empty_zones())
         invalid = empty_zones()
         invalid["RU"] = {"state": "scored", "grade": "4/4"}
         with self.assertRaises(ValueError):
-            self.store.save("CXR-0", "r", invalid, "bad")
-        self.assertEqual(self.store.get("CXR-0", "r")["note"], "original")
+            self.store.save("CXR-0", "r", invalid)
+        self.assertEqual(self.store.get("CXR-0", "r")["zones"], empty_zones())
 
     def test_failed_transaction_keeps_previous_rating_and_revision(self):
-        self.store.save("CXR-0", "r", empty_zones(), "original")
+        self.store.save("CXR-0", "r", empty_zones())
         self.store.connection.executescript("CREATE TRIGGER reject_revision BEFORE INSERT ON revisions BEGIN SELECT RAISE(ABORT, 'forced disk failure'); END;")
+        changed = empty_zones()
+        changed["RU"] = {"state": "scored", "grade": "1/0"}
         with self.assertRaises(sqlite3.DatabaseError):
-            self.store.save("CXR-0", "r", empty_zones(), "lost?")
-        self.assertEqual(self.store.get("CXR-0", "r")["note"], "original")
+            self.store.save("CXR-0", "r", changed)
+        self.assertEqual(self.store.get("CXR-0", "r")["zones"], empty_zones())
         self.assertEqual(self.store.connection.execute("SELECT count(*) FROM revisions").fetchone()[0], 1)
 
     def test_changed_source_is_rejected_atomically(self):
@@ -93,16 +97,21 @@ class PersistenceTests(unittest.TestCase):
 
     def test_export_includes_unread_preserves_grades_and_protects_spreadsheets(self):
         zones = {z: {"state": "scored", "grade": GRADES[i]} for i, z in enumerate(ZONES)}
-        self.store.save("CXR-0", "r", zones, "=HYPERLINK(\"example\")", "complete", quality={"grade": 1, "reason": ""})
+        shape = dict(self.spatial(), label='=HYPERLINK("example")')
+        self.store.save("CXR-0", "r", zones, "complete", quality={"grade": 1, "reason": ""}, spatial_annotations=[shape])
         paths = self.store.export(self.directory / "exports", [c["case_id"] for c in self.cases], "r")
         rows = list(csv.DictReader(paths[0].read_text(encoding="utf-8-sig").splitlines()))
         package = json.loads(paths[1].read_text())
         self.assertEqual(len(rows), 12)
         self.assertEqual(rows[0]["profusion_code"], GRADE_CODES["0/-"])
-        self.assertTrue(rows[0]["note"].startswith("'="))
+        vertices = list(csv.DictReader(paths[2].read_text(encoding="utf-8-sig").splitlines()))
+        self.assertTrue(vertices[0]["label"].startswith("'="))
+        self.assertNotIn("note", rows[0])
         self.assertEqual(package["records"][0]["zones"], zones)
         self.assertEqual(package["records"][1]["zones"], empty_zones())
-        self.assertEqual(package["records"][0]["note"], '=HYPERLINK("example")')
+        self.assertEqual(package["records"][0]["spatial_annotations"][0]["label"], '=HYPERLINK("example")')
+        self.assertEqual(package["schema_version"], 4)
+        self.assertNotIn("note", package["records"][0])
         self.assertNotIn("/private/source", paths[1].read_text())
         self.assertEqual(len(package["history"]), 1)
 
@@ -113,7 +122,7 @@ class PersistenceTests(unittest.TestCase):
     def test_spatial_restart_reader_case_isolation_and_vertex_export(self):
         point = self.spatial("point", [[-0.125, 350.5, 0]])
         polygon = self.spatial()
-        self.store.save("CXR-0", "r", empty_zones(), "", spatial_annotations=[point, polygon])
+        self.store.save("CXR-0", "r", empty_zones(), spatial_annotations=[point, polygon])
         self.store.close()
         self.store = AnnotationStore(self.directory)
         annotations = self.store.get("CXR-0", "r")["spatial_annotations"]
@@ -136,21 +145,21 @@ class PersistenceTests(unittest.TestCase):
                        [[100, 100, 0], [300, 300, 0], [100, 300, 0], [300, 100, 0]],
                        [[100, 100, 0], [200, 100, 0], [300, 100, 0]]):
             shape = self.spatial(points=points)
-            saved = self.store.save("CXR-0", "r", zones, "", spatial_annotations=[shape])
+            saved = self.store.save("CXR-0", "r", zones, spatial_annotations=[shape])
             self.assertEqual(saved["spatial_annotations"][0]["state"], "draft")
             with self.assertRaises(ValueError):
-                self.store.save("CXR-0", "r", zones, "", "complete", spatial_annotations=[shape], quality={"grade": 1, "reason": ""})
+                self.store.save("CXR-0", "r", zones, "complete", spatial_annotations=[shape], quality={"grade": 1, "reason": ""})
         self.assertIsNone(polygon_issue([[0, 0, 0], [100, 0, 0], [100, 100, 0], [0, 100, 0]]))
 
     def test_bad_spatial_coordinate_cannot_overwrite_and_deletion_is_audited(self):
         point = self.spatial("point", [[100, 200, 0]])
-        self.store.save("CXR-0", "r", empty_zones(), "", spatial_annotations=[point])
+        self.store.save("CXR-0", "r", empty_zones(), spatial_annotations=[point])
         for coordinates in ([float("nan"), 200, 0], [2501, 200, 0], [100, -1, 0], [100, 200, 1]):
             invalid = dict(point, points_ijk=[coordinates])
             with self.assertRaises(ValueError):
-                self.store.save("CXR-0", "r", empty_zones(), "", spatial_annotations=[invalid])
+                self.store.save("CXR-0", "r", empty_zones(), spatial_annotations=[invalid])
             self.assertEqual(self.store.get("CXR-0", "r")["spatial_annotations"][0]["points_ijk"], point["points_ijk"])
-        self.store.save("CXR-0", "r", empty_zones(), "", spatial_annotations=[])
+        self.store.save("CXR-0", "r", empty_zones(), spatial_annotations=[])
         self.assertEqual(self.store.get("CXR-0", "r")["spatial_annotations"], [])
         self.assertEqual(self.store.connection.execute("SELECT count(*) FROM revisions").fetchone()[0], 2)
 

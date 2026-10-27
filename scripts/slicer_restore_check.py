@@ -18,15 +18,16 @@ try:
     first = {z: v["grade"] for z, v in w._zonesFromUI().items()}
     zone_order = ("RU", "RM", "RL", "LU", "LM", "LL")
     assert [first[z] for z in zone_order] == ["0/-", "0/0", "0/1", "1/0", "1/1", "1/2"]
-    assert "模拟失败后保留输入" in w.noteEdit.toPlainText()
-    result["checks"].append("new Slicer process restores all six exact ratings and latest autosaved note")
+    assert w.currentRecord["quality"]["grade"] == 2
+    result["checks"].append("new Slicer process restores all six exact ratings and the quality selection recovered after save failure")
     assert w.selectCase(1)
     assert [w._zonesFromUI()[z]["grade"] for z in zone_order] == ["2/1", "2/2", "2/3", "3/2", "3/3", "3/+"]
     result["checks"].append("new process restores remaining six grade levels")
     assert w.selectCase(2)
     assert w._zonesFromUI()["RU"] == {"state": "not_scorable", "grade": None}
     assert w.currentRecord["status"] == "complete"
-    result["checks"].append("new process restores non-scorable state, reason and completed status")
+    assert not w.currentRecord["audio"] and "note" not in w.currentRecord
+    result["checks"].append("new process restores non-scorable completed status without text or mandatory audio")
     # Pixel orientation must preserve the original image's left/right and up/down.
     import numpy as np
     import vtk

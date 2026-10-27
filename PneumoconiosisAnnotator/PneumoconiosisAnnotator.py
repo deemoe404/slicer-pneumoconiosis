@@ -205,15 +205,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.markups = ImageMarkups(self.spatialChanged, self.updateSpatialControls)
         self.layout.addWidget(self.features.audioWidget)
 
-        self.noteWidget = qt.QGroupBox("备注 / 不可评价原因")
-        note_layout = qt.QVBoxLayout(self.noteWidget)
-        self.noteEdit = qt.QPlainTextEdit()
-        self.noteEdit.setMaximumHeight(56)
-        self.noteEdit.setPlaceholderText("不可评价时，请注明肺区和原因。")
-        self.noteEdit.connect("textChanged()", self.noteChanged)
-        note_layout.addWidget(self.noteEdit)
-        self.layout.addWidget(self.noteWidget)
-
         self.saveLabel = qt.QLabel()
         self.saveLabel.setWordWrap(True)
         self.saveLabel.hide()
@@ -469,7 +460,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             value = self.currentRecord["zones"][zone]
             token = value["grade"] if value["state"] == "scored" else value["state"]
             control.set_value(token)
-        self.noteEdit.setPlainText(self.currentRecord["note"])
         self.caseCombo.setCurrentIndex(self.currentIndex)
         self.updating = False
         self.dirty = False
@@ -488,14 +478,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.currentRecord["status"] = "draft"
         self.dirty = True
         self.flushSave()
-
-    def noteChanged(self):
-        if self.updating or self.currentRecord is None:
-            return
-        self.currentRecord["status"] = "draft"
-        self.dirty = True
-        self.setSaveStatus("正在保存…")
-        self.saveTimer.start()
 
     def _restoreSpatial(self):
         self.spatialState = self.currentRecord["spatial_annotations"]
@@ -606,7 +588,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
                     raise ValueError("当前显示图像不对应所选病例，已停止保存。")
             self.currentRecord = self.store.save(
                 self.cases[self.currentIndex]["case_id"], self.currentReader,
-                self._zonesFromUI(), self.noteEdit.toPlainText(), self.currentRecord["status"], self._captureDisplay(),
+                self._zonesFromUI(), self.currentRecord["status"], self._captureDisplay(),
                 spatial_annotations=self.spatialState, **self.features.capture())
             self.dirty = False
             self.setSaveStatus(("已完成 · " if self.currentRecord["status"] == "complete" else "草稿 · ") + "已自动保存")
@@ -655,7 +637,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             self.showError("\n".join(form_issues))
             return False
         try:
-            validate_complete(self._zonesFromUI(), self.noteEdit.toPlainText())
+            validate_complete(self._zonesFromUI())
             validate_spatial(self.spatialState, self.cases[self.currentIndex], complete=True)
             values = self.features.capture()
             validate_quality(values["quality"], complete=True)
@@ -726,24 +708,20 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         zones = self._zonesFromUI()
         if active:
             quality = {**self.currentRecord["quality"], "grade": self.features.qualityChoices.value}
-            issues = completion_issues(zones, self.noteEdit.toPlainText(), quality,
+            issues = completion_issues(zones, quality,
                                        self.spatialState, partition, self.cases[self.currentIndex])
             if self.features.audio_stop_error:
                 issues["audio"] = self.features.audio_stop_error
             if self.saveError:
                 issues["save"] = self.saveError
-        needs_reason = any(value["state"] == "not_scorable" for value in zones.values())
         for key, widget, title, optional in (
             ("quality", self.features.qualityWidget, "整片质量", False),
             ("ratings", self.ratingsWidget, "六肺区评分", False),
             ("partition", self.features.partitionWidget, "肺野与六区", partition is None),
             ("spatial", self.spatialGroup, "点与区域", not self.spatialState),
             ("audio", self.features.audioWidget, "语音备注", True),
-            ("note", self.noteWidget, "备注 / 不可评价原因", not needs_reason),
         ):
             issue = issues.get(key)
-            if key == "ratings":
-                issue = issue or issues.get("note")
             state = "missing" if issue else "ready" if active else "inactive"
             if widget.property("completionState") != state:
                 widget.setProperty("completionState", state)
@@ -759,7 +737,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             widget.setToolTip(issue or ("此项可不填写。" if optional else "已满足完成条件。") if active else "请选择胸片目录。")
             widget.setAccessibleDescription(widget.toolTip)
         for zone, control in self.gradeSliders.items():
-            ready = zones[zone]["state"] != "unread" and not (zones[zone]["state"] == "not_scorable" and "note" in issues)
+            ready = zones[zone]["state"] != "unread"
             control.set_completion_state(active, ready)
         state = "missing" if issues else "ready" if active else "inactive"
         if self.completeButton.property("completionState") != state:
@@ -775,7 +753,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def updateControls(self):
         active = self.currentIndex >= 0 and self.volume is not None
-        for control in [self.exportButton, self.caseCombo, self.readerCombo, self.noteEdit, self.completeButton, self.fitButton, self.resetButton, self.ratingsWidget]:
+        for control in [self.exportButton, self.caseCombo, self.readerCombo, self.completeButton, self.fitButton, self.resetButton, self.ratingsWidget]:
             control.setEnabled(active)
         self.previousButton.setEnabled(active and self.currentIndex > 0)
         self.nextButton.setEnabled(active and self.currentIndex + 1 < len(self.cases))

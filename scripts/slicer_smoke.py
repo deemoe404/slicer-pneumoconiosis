@@ -66,8 +66,8 @@ def run():
               and w.completeButton.property("completionState") == "missing",
               "unread quality, six-zone ratings and completion action start red")
         check(all(group.property("completionState") == "ready" for group in
-                  (w.features.partitionWidget, w.spatialGroup, w.features.audioWidget, w.noteWidget)),
-              "empty optional partition, geometry, audio and notes stay green without becoming required")
+                  (w.features.partitionWidget, w.spatialGroup, w.features.audioWidget)),
+              "empty optional partition, geometry and audio stay green without becoming required")
         check(all(control.slider.minimum == 0 and control.slider.maximum == 11 and control.slider.singleStep == 1
                   for control in w.gradeSliders.values()), "each lung zone has exactly twelve discrete slider grades")
         check(w.features.qualityChoices.value is None and len(w.features.qualityChoices.buttons) == 5,
@@ -100,8 +100,6 @@ def run():
         for i, zone in enumerate(ZONES):
             rate(w, zone, GRADES[i])
         check([w.gradeSliders[zone].value for zone in ZONES] == list(GRADES[:6]), "the six lung-zone sliders remain independent")
-        w.noteEdit.setPlainText("仅 QA：自动保存与恢复测试")
-        events(0.65)
         first_id = w.cases[0]["case_id"]
         for grade in (1, 2, 3, 4, None, 1):
             w.features.qualityChoices.buttons[grade].click()
@@ -111,7 +109,7 @@ def run():
         check(w.store.get(first_id, "reader-01")["quality"]["grade"] == 1,
               "quality radio choices, including clearing back to unread, autosave without changing the six ratings")
         saved = w.store.get(first_id, "reader-01")
-        check(saved["note"].startswith("仅 QA"), "debounced note autosaves without a save button")
+        check("note" not in saved, "new records contain no text note field")
         first_zones = w._zonesFromUI()
         check(saved["zones"] == first_zones, "grade changes autosave immediately")
         check(w.completeButton.property("completionState") == "ready", "satisfied required fields turn the completion action green")
@@ -137,7 +135,7 @@ def run():
         w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-01"))
         check(w.changeReader() and w._zonesFromUI() == first_zones, "switching reader restores original record")
         w.store.connection.executescript("CREATE TEMP TRIGGER reject_save BEFORE INSERT ON annotations BEGIN SELECT RAISE(ABORT, 'QA forced save failure'); END;")
-        w.noteEdit.setPlainText("仅 QA：模拟失败后保留输入")
+        w.features.qualityChoices.buttons[2].click()
         check(not w.selectCase(1) and w.currentIndex == 0, "save failure blocks case switch and retains current input")
         check(w.saveLabel.isVisible() and w.retryButton.isVisible(), "actual save errors and retry remain visible")
         check(w.completeButton.property("completionState") == "missing" and "save" in w.updateCompletionControls(),
@@ -149,21 +147,20 @@ def run():
         check(w.closeGuard.eventFilter(slicer.util.mainWindow(), close) and not close.isAccepted(), "save failure blocks application close")
         w.store.connection.execute("DROP TRIGGER reject_save")
         check(w.flushSave(), "retry recovers buffered input after storage failure")
+        check(w.currentRecord["quality"]["grade"] == 2, "storage retry preserves the quality selection made before the failure")
         check(not w.saveLabel.isVisible() and not w.retryButton.isVisible(), "successful saves leave no persistent status row")
         check(w.completeButton.property("completionState") == "ready", "a successful storage retry restores green completion")
-        # Non-scorable is explicitly different from zero and requires a reason at completion.
+        # Non-scorable is a valid result without mandatory text or audio.
         w.selectCase(2)
         w.features.qualityChoices.buttons[4].click()
         for zone in ZONES:
             rate(w, zone, "0/0")
         w.gradeSliders["RU"].notScorableButton.click()
-        check(w.noteWidget.property("completionState") == "missing" and w.gradeSliders["RU"].property("completionState") == "missing",
-              "non-scorable without a reason marks both the note area and affected row red")
-        check(not w.completeCase(), "not-scorable completion requires a reason")
-        w.noteEdit.setPlainText("仅 QA：右上遮挡，其余肺区可评")
-        check(w.noteWidget.property("completionState") == "ready" and w.completeButton.property("completionState") == "ready",
-              "typing the missing reason updates all indicators before the autosave delay")
-        check(w.completeCase(), "non-scorable status and its note can complete with quality grade four and no defect reason")
+        check(w.gradeSliders["RU"].property("completionState") == "ready" and w.ratingsWidget.property("completionState") == "ready",
+              "choosing non-scorable immediately turns the lung zone and rating group green")
+        check(not w.features.audio and w.completeButton.property("completionState") == "ready",
+              "a non-scorable case can complete without a mandatory recording")
+        check(w.completeCase(), "non-scorable status completes and advances without text input")
         for index in range(len(w.cases)):
             check(w.selectCase(index), f"native DICOM reader loads sample {index + 1:02d}")
             check(list(w.volume.GetImageData().GetDimensions()) == [w.cases[index]["columns"], w.cases[index]["rows"], 1], f"sample {index + 1:02d} retains original pixel dimensions")
@@ -172,6 +169,8 @@ def run():
         rows = list(csv.DictReader(csv_path.read_text(encoding="utf-8-sig").splitlines()))
         package = json.loads(json_path.read_text())
         check(len(rows) == 66 and len(package["records"]) == 11, "CSV and JSON export include all 11 cases and 66 zones")
+        check("note" not in rows[0] and all("note" not in record for record in package["records"]),
+              "CSV and JSON omit the removed text-note field")
         exported_grades = {z["grade"] for r in package["records"] for z in r["zones"].values() if z["grade"]}
         check(exported_grades == set(GRADES), "all twelve grades export losslessly")
         check(package["records"][2]["zones"]["RU"] == {"state": "not_scorable", "grade": None}, "non-scorable exports as null, never zero")

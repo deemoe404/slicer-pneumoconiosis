@@ -57,21 +57,11 @@ def validate_zones(zones):
     return normalized
 
 
-def rating_completion_issues(zones, note):
+def validate_complete(zones):
     zones = validate_zones(zones)
-    issues = {}
     unread = [ZONE_NAMES[z] for z in ZONES if zones[z]["state"] == "unread"]
     if unread:
-        issues["ratings"] = "尚未评价：" + "、".join(unread)
-    if any(v["state"] == "not_scorable" for v in zones.values()) and not note.strip():
-        issues["note"] = "请在备注中说明不可评价的肺区及原因。"
-    return issues
-
-
-def validate_complete(zones, note):
-    issues = rating_completion_issues(zones, note)
-    if issues:
-        raise ValueError(next(iter(issues.values())))
+        raise ValueError("尚未评价：" + "、".join(unread))
 
 
 def validate_quality(quality, complete=False):
@@ -153,12 +143,13 @@ def validate_spatial(annotations, image, complete=False):
     return result
 
 
-def completion_issues(zones, note, quality, spatial, partition, image):
+def completion_issues(zones, quality, spatial, partition, image):
     """Cheap form checks shared by live feedback and completion, without loading assets."""
     from .partition import validate_partition_confirmation
 
-    issues = rating_completion_issues(zones, note)
+    issues = {}
     for area, validate in (
+        ("ratings", lambda: validate_complete(zones)),
         ("quality", lambda: validate_quality(quality, complete=True)),
         ("spatial", lambda: validate_spatial(spatial, image, complete=True)),
         ("partition", lambda: validate_partition_confirmation(partition)),
@@ -284,18 +275,18 @@ class AnnotationStore:
                 value["status"] = "draft"
             value["updated_at"] = row[1]
             return value
-        return {"schema_version": 3, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
+        return {"schema_version": 4, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
                 "zones": empty_zones(), "spatial_annotations": [], "quality": {"grade": None, "reason": ""},
-                "partition": None, "audio": [], "note": "", "status": "draft", "display": {}, "updated_at": None}
+                "partition": None, "audio": [], "status": "draft", "display": {}, "updated_at": None}
 
-    def save(self, case_id, reader, zones, note, status="draft", display=None, spatial_annotations=None,
+    def save(self, case_id, reader, zones, status="draft", display=None, spatial_annotations=None,
              quality=None, partition=None, audio=None):
         reader = validate_reader(reader)
         zones = validate_zones(zones)
         if status not in ("draft", "complete"):
             raise ValueError("无效的病例状态。")
         if status == "complete":
-            validate_complete(zones, note)
+            validate_complete(zones)
         quality = validate_quality(quality, complete=status == "complete")
         case_row = self.connection.execute("SELECT metadata_json FROM cases WHERE case_id=?", (case_id,)).fetchone()
         if not case_row:
@@ -314,8 +305,8 @@ class AnnotationStore:
                 raise ValueError("分区不对应当前原始胸片，已停止保存。")
             if partition["state"] == "confirmed" and partition.get("confirmed_by") != reader:
                 raise ValueError("分区确认不属于当前读者，请由当前读者重新确认。")
-        payload = {"schema_version": 3, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
-                   "zones": zones, "note": str(note), "status": status, "display": display or {},
+        payload = {"schema_version": 4, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
+                   "zones": zones, "status": status, "display": display or {},
                    "image": image, "spatial_annotations": spatial, "quality": quality,
                    "partition": partition, "audio": audio}
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False)
@@ -354,7 +345,7 @@ class AnnotationStore:
             record = self.get(case_id, reader)
             if any(a["id"] == recording["id"] for a in record["audio"]):
                 continue
-            self.save(case_id, reader, record["zones"], record["note"], "draft", record["display"],
+            self.save(case_id, reader, record["zones"], "draft", record["display"],
                       record["spatial_annotations"], record["quality"], record["partition"], record["audio"] + [recording])
             recovered += 1
         return recovered
@@ -374,7 +365,7 @@ class AnnotationStore:
             wanted = set(case_ids)
             history = [{"revision": r[0], "at": r[2], "annotation": json.loads(r[3])}
                        for r in self.connection.execute("SELECT id, case_id, created_at, payload_json FROM revisions WHERE reader_id=? ORDER BY id", (reader,)) if r[1] in wanted]
-        package = {"schema_version": 3, "standard": STANDARD, "exported_at": utc_now(), "reader_id": reader,
+        package = {"schema_version": 4, "standard": STANDARD, "exported_at": utc_now(), "reader_id": reader,
                    "coordinate_system": COORDINATES, "grade_codes": GRADE_CODES, "zone_names": ZONE_NAMES,
                    "quality_grades": QUALITY_GRADES,
                    "records": records, "history": history}
@@ -412,7 +403,7 @@ class AnnotationStore:
         buffer = io.StringIO(newline="")
         fields = ["case_id", "reader_id", "status", "standard", "quality_grade", "quality_name", "quality_reason",
                   "zone", "zone_name", "state", "profusion_code", "major_category", "alternative_category",
-                  "partition_state", "audio_count", "audio_paths", "note", "updated_at"]
+                  "partition_state", "audio_count", "audio_paths", "updated_at"]
         writer = csv.DictWriter(buffer, fieldnames=fields)
         writer.writeheader()
         for record in records:
@@ -425,7 +416,7 @@ class AnnotationStore:
                        "quality_name": QUALITY_GRADES.get(record["quality"]["grade"], ""), "quality_reason": record["quality"]["reason"],
                        "zone": zone, "zone_name": ZONE_NAMES[zone], "state": value["state"],
                        "profusion_code": GRADE_CODES.get(grade, ""), "major_category": parts[0],
-                       "alternative_category": parts[1], "note": record["note"], "updated_at": record["updated_at"] or "",
+                       "alternative_category": parts[1], "updated_at": record["updated_at"] or "",
                        "partition_state": record["partition"]["state"] if record["partition"] else "not_generated",
                        "audio_count": len(record["audio"]), "audio_paths": "|".join(a["path"] for a in record["audio"])}
                 writer.writerow({key: csv_safe(value) for key, value in row.items()})
@@ -451,7 +442,7 @@ class AnnotationStore:
 def csv_safe(value):
     if not isinstance(value, str):
         return value
-    # Protect spreadsheet consumers from formulas in reader-entered notes.
+    # Protect spreadsheet consumers from formulas in reader-entered labels.
     return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n")) else value
 
 
