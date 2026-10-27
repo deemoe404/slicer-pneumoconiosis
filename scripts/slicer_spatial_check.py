@@ -5,6 +5,7 @@ import time
 import traceback
 from pathlib import Path
 
+import qt
 import slicer
 import vtk
 
@@ -48,6 +49,15 @@ def mouse(w, point, button="Left", end=None):
     events(0.08)
 
 
+def click_list_row(w, row):
+    view = w.markupList.viewport()
+    point = w.markupList.visualItemRect(w.markupList.item(row)).center()
+    for kind in (qt.QEvent.MouseButtonPress, qt.QEvent.MouseButtonRelease):
+        held = qt.Qt.LeftButton if kind == qt.QEvent.MouseButtonPress else qt.Qt.NoButton
+        event = qt.QMouseEvent(kind, qt.QPointF(point), qt.QPointF(view.mapToGlobal(point)), qt.Qt.LeftButton, held, qt.Qt.NoModifier)
+        slicer.app.sendEvent(view, event)
+
+
 try:
     slicer.util.selectModule("PneumoconiosisAnnotator")
     w = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
@@ -56,6 +66,8 @@ try:
         (project / ("annotations.sqlite3" + suffix)).unlink(missing_ok=True)
     w.dataRoot = OUT / "spatial-settings"
     check(w.openDirectory(ROOT.parent / "2023Sample", project, "reader-01"), "open existing DX samples in an isolated spatial QA project")
+    check(w.layout.itemAt(0).widget() == w.features.audioWidget and w.layout.itemAt(1).widget() == w.headerWidget,
+          "voice recording is the first panel section, above case navigation")
     window = slicer.util.mainWindow()
     window.resize(1400, 1000)
     slicer.util.setToolbarsVisible(False)
@@ -75,6 +87,8 @@ try:
     check(len(point) == 1 and point[0]["kind"] == "point", "native mouse click places one point and autosaves")
     check(w.spatialGroup.property("completionState") == "ready", "a placed point satisfies the spatial completion requirement")
     point_id = point[0]["id"]
+    check(w.markupList.count == 1 and w.markupList.currentItem().data(qt.Qt.UserRole) == point_id,
+          "a placed point appears as a selected row in the flat list")
     check(max(abs(a - b) for a, b in zip(point[0]["points_ijk"][0], [1600, 1100, 0])) < 4,
           "mouse placement exports original raster pixel coordinates")
     check(w.markups.placing_id is None, "single point placement returns to normal interaction")
@@ -98,8 +112,15 @@ try:
     region_id = records[1]["id"]
     w.renameMarkup("QA_REGION")
     events(0.55)
+    check(w.markupList.count == 2 and "QA_POINT" in w.markupList.item(0).text() and "QA_REGION" in w.markupList.item(1).text(),
+          "point and polygon names are visible together without opening a dropdown")
+    click_list_row(w, 0)
+    check(w.markups.selected_id == point_id and w.markupNameEdit.text == "QA_POINT", "native list click selects the point and its rename field")
+    click_list_row(w, 1)
+    check(w.markups.selected_id == region_id and w.markupNameEdit.text == "QA_REGION", "native list click selects the polygon independently")
     expected = w.store.get(first_id, "reader-01")["spatial_annotations"]
     check(w.selectCase(1) and w.markups.capture() == [], "switching case removes previous image's spatial nodes")
+    check(w.markupList.count == 0, "switching to an unannotated case clears the flat list")
     check(w.selectCase(0) and len(w.markups.capture()) == 2, "switching back restores point and polygon")
     check(w.markups.capture()[0]["points_ijk"] == expected[0]["points_ijk"] and
           w.markups.capture()[1]["points_ijk"] == expected[1]["points_ijk"], "IJK to RAS round trip preserves coordinates after reloading DICOM")
@@ -110,12 +131,14 @@ try:
     w.markups.select(region_id)
     w.deleteMarkupButton.click()
     check(len(w.store.get(first_id, "reader-01")["spatial_annotations"]) == 1, "selected polygon deletion persists immediately")
+    check(w.markupList.count == 1 and w.markupList.item(0).data(qt.Qt.UserRole) == point_id, "deleting a polygon removes only its list row")
     # Keep an unfinished region as a resumable draft across case switching.
     w.regionButton.click()
     mouse(w, [650, 750, 0])
     mouse(w, [1100, 750, 0])
     w.finishMarkupButton.click()
     check(w.currentRecord["spatial_annotations"][1]["state"] == "draft", "two-point region persists explicitly as an unfinished draft")
+    check("草稿" in w.markupList.item(1).text(), "unfinished polygon state is visible directly in its list row")
     check(w.spatialGroup.property("completionState") == "missing" and "spatial" in w.updateCompletionControls(),
           "an unfinished region turns its area red and reports the blocking geometry")
     draft_id = w.currentRecord["spatial_annotations"][1]["id"]
@@ -153,7 +176,8 @@ except Exception:
         REPORT["live_shapes"] = w.markups.capture()
         REPORT["native_nodes"] = [{"class": n.GetClassName(), "label": n.GetName(), "defined": n.GetNumberOfDefinedControlPoints()}
                                   for n in w.markups.nodes.values()]
-        window.grab().save(str(OUT / "spatial-failure.png"))
+        if "window" in globals():
+            window.grab().save(str(OUT / "spatial-failure.png"))
     traceback.print_exc()
 (OUT / "spatial-result.json").write_text(json.dumps(REPORT, ensure_ascii=False, indent=2))
 slicer.util.exit(0 if REPORT["success"] else 1)

@@ -154,6 +154,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.layout.addWidget(self.headerWidget)
 
         self.features = CaseFeatures(self, ROOT)
+        self.layout.insertWidget(0, self.features.audioWidget)
         self.layout.addWidget(self.features.qualityWidget)
 
         ratings = qt.QGroupBox("六肺区评分")
@@ -184,27 +185,30 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         for button in (self.pointButton, self.regionButton, self.finishMarkupButton):
             tools.addWidget(button)
         spatial_layout.addLayout(tools)
+        self.markupList = qt.QListWidget()
+        self.markupList.setAccessibleName("点与区域列表")
+        self.markupList.setSelectionMode(qt.QAbstractItemView.SingleSelection)
+        self.markupList.setUniformItemSizes(True)
+        self.markupList.setHorizontalScrollBarPolicy(qt.Qt.ScrollBarAlwaysOff)
+        self.markupList.setTextElideMode(qt.Qt.ElideRight)
+        self.markupList.connect("currentRowChanged(int)", self.selectMarkup)
+        spatial_layout.addWidget(self.markupList)
         selection = qt.QHBoxLayout()
-        self.markupCombo = qt.QComboBox()
-        self.markupCombo.setMinimumContentsLength(12)
-        self.markupCombo.connect("currentIndexChanged(int)", self.selectMarkup)
-        selection.addWidget(self.markupCombo, 1)
-        self.deleteMarkupButton = qt.QPushButton("删除")
-        self.deleteMarkupButton.connect("clicked()", self.deleteMarkup)
-        selection.addWidget(self.deleteMarkupButton)
-        spatial_layout.addLayout(selection)
         self.markupNameEdit = qt.QLineEdit()
         self.markupNameEdit.setPlaceholderText("选中标注后可修改名称")
         self.markupNameEdit.setMaxLength(80)
         self.markupNameEdit.connect("textEdited(QString)", self.renameMarkup)
-        spatial_layout.addWidget(self.markupNameEdit)
+        selection.addWidget(self.markupNameEdit, 1)
+        self.deleteMarkupButton = qt.QPushButton("删除")
+        self.deleteMarkupButton.connect("clicked()", self.deleteMarkup)
+        selection.addWidget(self.deleteMarkupButton)
+        spatial_layout.addLayout(selection)
         self.spatialHint = qt.QLabel("单击放点；区域依次点选 ≥3 个顶点，右键结束。\n拖动顶点可调整；按原图像素坐标保存。")
         self.spatialHint.setWordWrap(True)
         self.spatialHint.setStyleSheet("color:#7d8899; font-size:11px;")
         spatial_layout.addWidget(self.spatialHint)
         self.layout.addWidget(spatial)
         self.markups = ImageMarkups(self.spatialChanged, self.updateSpatialControls)
-        self.layout.addWidget(self.features.audioWidget)
 
         self.saveLabel = qt.QLabel()
         self.saveLabel.setWordWrap(True)
@@ -493,21 +497,42 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             return
         self.spatialUpdating = True
         try:
-            self.markupCombo.clear()
-            for identifier, node in self.markups.nodes.items():
+            previous = self.markupList.currentItem()
+            previous_id = previous.data(qt.Qt.UserRole) if previous else None
+            scroll = self.markupList.verticalScrollBar().value
+            identifiers = list(self.markups.nodes)
+            if [self.markupList.item(row).data(qt.Qt.UserRole) for row in range(self.markupList.count)] != identifiers:
+                self.markupList.clear()
+                for identifier in identifiers:
+                    item = qt.QListWidgetItem("", self.markupList)
+                    item.setData(qt.Qt.UserRole, identifier)
+            selected_item = None
+            for row, (identifier, node) in enumerate(self.markups.nodes.items()):
                 kind = node.GetAttribute("PneumoconiosisKind")
                 count = node.GetNumberOfDefinedControlPoints()
                 record = next((v for v in self.spatialState if v["id"] == identifier), None)
                 draft = kind == "polygon" and (record is None or polygon_issue(record["points_ijk"]))
                 suffix = " · 草稿" if draft else (" · 待放置" if count == 0 else "")
-                self.markupCombo.addItem(("点 · " if kind == "point" else "区域 · ") + node.GetName() + suffix, identifier)
-            self.markupCombo.setCurrentIndex(self.markupCombo.findData(self.markups.selected_id))
+                text = ("点 · " if kind == "point" else "区域 · ") + node.GetName() + suffix
+                item = self.markupList.item(row)
+                item.setText(text)
+                item.setToolTip(text)
+                if identifier == self.markups.selected_id:
+                    selected_item = item
+            self.markupList.setCurrentRow(self.markupList.row(selected_item) if selected_item is not None else -1)
+            row_height = max(qt.QFontMetrics(self.markupList.font).height() + 8, self.markupList.sizeHintForRow(0))
+            rows = min(5, max(1, self.markupList.count))
+            self.markupList.setFixedHeight(rows * row_height + 2 * self.markupList.frameWidth)
+            if selected_item is not None and previous_id != self.markups.selected_id:
+                self.markupList.scrollToItem(selected_item)
+            else:
+                self.markupList.verticalScrollBar().setValue(scroll)
             selected = self.markups.nodes.get(self.markups.selected_id)
             placing = bool(self.markups.placing_id)
             active = self.volume is not None and self.currentRecord is not None
             self.pointButton.setEnabled(active)
             self.regionButton.setEnabled(active)
-            self.markupCombo.setEnabled(active and bool(self.markups.nodes))
+            self.markupList.setEnabled(active and bool(self.markups.nodes))
             self.deleteMarkupButton.setEnabled(active and selected is not None)
             self.markupNameEdit.setEnabled(active and selected is not None)
             if not self.markupNameEdit.hasFocus():
@@ -523,9 +548,10 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             self.spatialUpdating = False
         self.updateCompletionControls()
 
-    def selectMarkup(self, _index):
+    def selectMarkup(self, row):
         if not self.spatialUpdating:
-            self.markups.select(self.markupCombo.currentData)
+            item = self.markupList.item(row)
+            self.markups.select(item.data(qt.Qt.UserRole) if item else None)
 
     def renameMarkup(self, text):
         if not self.spatialUpdating and text.strip():
