@@ -24,8 +24,9 @@ def start():
             last = json.loads(last_path.read_text(encoding="utf-8"))
             widget.openDirectory(last["source"], projectDirectory=last["project"])
         else:
+            from PneumoconiosisLib.runtime import packaged
             sample = ROOT.parent / "2023Sample"
-            if sample.exists():
+            if not packaged(ROOT) and sample.exists():
                 widget.openDirectory(sample)
         status = {"ready": widget.currentIndex >= 0, "case_count": len(widget.cases),
                   "slicer": slicer.app.applicationVersion, "current_reader": widget.currentReader,

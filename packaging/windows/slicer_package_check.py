@@ -29,6 +29,13 @@ def events(seconds=.1):
 
 
 try:
+    startup = ROOT / "scripts/start.py"
+    exec(compile(startup.read_text(encoding="utf-8"), str(startup), "exec"), {"__file__": str(startup), "__name__": "package_startup"})
+    status_path = OUT / "application-data/startup-status.json"
+    deadline = time.monotonic() + 30
+    while not status_path.exists() and time.monotonic() < deadline:
+        events(.1)
+    check(status_path.exists(), "normal application startup initializes the external user data directory")
     slicer.util.selectModule("PneumoconiosisAnnotator")
     w = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
     from PneumoconiosisLib.runtime import python_executable
@@ -37,6 +44,8 @@ try:
     REPORT.update(slicer=slicer.app.applicationVersion, revision=slicer.app.repositoryRevision,
                   data_root=str(w.dataRoot), project=str(w.store.directory))
     expected_slicer = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["slicer"]
+    REPORT["slicer_home"] = str(slicer.app.slicerHome)
+    check(Path(REPORT["slicer_home"]).resolve() == (ROOT / "Slicer").resolve(), "Slicer runs from the relocated installation")
     check(REPORT["slicer"].startswith(expected_slicer["version"]) and str(REPORT["revision"]) == expected_slicer["revision"],
           "installed GUI uses the pinned official Slicer build")
     window = slicer.util.mainWindow()
@@ -71,6 +80,8 @@ try:
     render_window = view.renderWindow()
     check(bool(render_window.SupportsOpenGL()), "installed Slicer renders with OpenGL in the test environment")
     REPORT["renderer"] = render_window.ReportCapabilities()
+    if os.environ.get("PNEUMO_EXPECT_SOFTWARE_GL") == "1":
+        check("llvmpipe" in REPORT["renderer"].lower(), "GUI check uses the isolated Mesa software renderer")
     check(window.grab().save(str(OUT / "installed-gui.png")), "installed GUI screenshot captured")
     REPORT["record"] = w.currentRecord
     w.cleanup()

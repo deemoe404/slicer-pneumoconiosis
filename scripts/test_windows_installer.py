@@ -45,7 +45,8 @@ def run():
     check(not (install / "runtime/python/pyvenv.cfg").exists(), "runtime has no dependency on the build machine's venv")
     environment = clean_environment()
     environment["PATH"] = os.pathsep.join((str(Path(os.environ["WINDIR"]) / "System32"), os.environ["WINDIR"]))
-    environment.update(GALLIUM_DRIVER="llvmpipe", MESA_GL_VERSION_OVERRIDE="4.5", QT_OPENGL="software")
+    environment.update(GALLIUM_DRIVER="llvmpipe", MESA_GL_VERSION_OVERRIDE="4.5", QT_OPENGL="desktop",
+                       QT_OPENGL_DLL="opengl32.dll", PNEUMO_EXPECT_SOFTWARE_GL="1")
     python = install / "runtime/python/python.exe"
     probe_prefix = "from pathlib import Path; import sys,torch,numpy; p=Path(sys.executable).parent.resolve(); assert Path(sys.prefix).resolve()==p and Path(sys.base_prefix).resolve()==p; assert all(Path(m.__file__).resolve().is_relative_to(p) for m in (torch,numpy))"
     checked([python, "-I", "-B", "-X", "utf8", "-c", probe_prefix], env=environment, timeout=90)
@@ -73,7 +74,10 @@ def run():
         for source in directory.glob("*.dll"):
             target = install / "Slicer/bin" / source.name
             if target.exists():
-                raise RuntimeError("Test graphics DLL would overwrite a shipped DLL: " + str(target))
+                if source.name.lower() in ("opengl32.dll", "libgallium_wgl.dll"):
+                    raise RuntimeError("Test OpenGL driver would overwrite a shipped driver: " + str(target))
+                # Keep Qt's own ANGLE/EGL and shared runtime DLLs intact.
+                continue
             shutil.copy2(source, target)
             mesa_files.append(target)
         process = subprocess.Popen([str(install / "PneumoconiosisAnnotator.exe"), "--self-test", str(OUT / "gui")], env=environment)
