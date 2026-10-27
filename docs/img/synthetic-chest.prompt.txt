@@ -1,0 +1,10 @@
+Generated with the built-in ImageGen tool on 2026-10-27.
+Asset: synthetic-chest.png
+Purpose: fictional image input for a real Slicer module screenshot. Not patient data or a clinical reference.
+
+Use case: scientific-educational.
+Asset type: synthetic chest radiograph used only as demo input in the README screenshot of a research annotation application.
+Primary request: generate a completely fictional adult PA chest X-ray, frontal projection, grayscale radiograph appearance, entire thorax visible from lung apices through both costophrenic angles, symmetric exposure and clear lung boundaries. Viewer-left is the subject's right lung; viewer-right is the subject's left lung. Natural rib, clavicle, diaphragm, heart and lung appearances, neutral inspiration, no dramatic or exaggerated disease findings. This is an illustrative simulated image, not evidence about health, disease or model performance.
+Composition/framing: one flat portrait chest radiograph filling the canvas, approximately 5:6 width to height, no photograph of a film or monitor, no perspective.
+Text (verbatim): small unobtrusive "SYNTHETIC DEMO" in the lower black margin; a small "L" at the upper viewer-right edge.
+Constraints: create from scratch, no source patient data; no patient names, dates, IDs, logos, UI controls, segmentation colors, arrows, bounding boxes, or other annotations. Keep grayscale throughout, dark background outside the torso.
