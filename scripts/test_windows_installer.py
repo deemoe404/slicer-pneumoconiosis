@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 import traceback
 import zipfile
 
@@ -80,8 +81,32 @@ def run():
                 continue
             shutil.copy2(source, target)
             mesa_files.append(target)
-        process = subprocess.Popen([str(install / "PneumoconiosisAnnotator.exe"), "--self-test", str(OUT / "gui")], env=environment)
+        source = OUT / "Archive 胸片"
+        study = source / "2023 Sample/病例 001"
+        study.mkdir(parents=True)
+        original = next((install / "qa/dicom").glob("*.dcm"))
+        shutil.copy2(original, study / original.name)
+        helpers = source / "__MACOSX"
+        helpers.mkdir()
+        (helpers / "._病例001").write_bytes(b"\x00\x05\x16\x07AppleDouble")
+        (study / ("._" + original.name)).write_bytes(b"\x00\x05\x16\x07AppleDouble")
+        # A valid-looking DICOM in the resource tree must also be excluded.
+        import pydicom
+        helper = pydicom.dcmread(original)
+        helper.PatientComments = "Synthetic resource-tree decoy, not a case"
+        helper.save_as(helpers / original.name, enforce_file_format=True)
+        environment["PNEUMO_TEST_DICOM_DIRECTORY"] = str(source)
+        launch = [str(install / "PneumoconiosisAnnotator.exe"), "--self-test", str(OUT / "gui")]
+        process = subprocess.Popen(launch, env=environment)
         try:
+            logs_directory = OUT / "gui/application-data/logs"
+            deadline = time.monotonic() + 30
+            while not list(logs_directory.glob("*.log")) and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(.1)
+            check(process.poll() is None and bool(list(logs_directory.glob("*.log"))), "first launcher starts the normal GUI session")
+            checked(launch, env=environment, timeout=15)
+            check(len(list(logs_directory.glob("*.log"))) == 1,
+                  "repeated launch while starting reuses one application instance")
             exit_code = process.wait(timeout=240)
         except subprocess.TimeoutExpired:
             subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False)

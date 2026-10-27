@@ -111,12 +111,19 @@ class ViewerToolbar:
 
     def _showNativeControls(self, visible):
         slicer.util.setToolbarsVisible(visible)
-        slicer.util.setDataProbeVisible(visible)
-        slicer.util.setModulePanelTitleVisible(visible)
-        slicer.util.setModuleHelpSectionVisible(visible)
+        window = slicer.util.mainWindow()
+        # These native panels are optional and can be absent during startup.
+        for probe in slicer.util.findChildren(window, name="DataProbeCollapsibleWidget"):
+            probe.setVisible(visible)
+        if slicer.util.findChildren(window, name="PanelDockWidget"):
+            slicer.util.setModulePanelTitleVisible(visible)
+        if slicer.util.findChildren(window, name="ModulePanel"):
+            slicer.util.setModuleHelpSectionVisible(visible)
         manager = slicer.app.layoutManager()
         for name in manager.sliceViewNames():
-            manager.sliceWidget(name).sliceController().setVisible(visible)
+            view = manager.sliceWidget(name)
+            if view is not None and view.sliceController() is not None:
+                view.sliceController().setVisible(visible)
 
     def applyInterface(self):
         self._showNativeControls(self.fullInterface)

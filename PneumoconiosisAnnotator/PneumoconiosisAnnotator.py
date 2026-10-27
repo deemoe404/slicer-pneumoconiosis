@@ -232,8 +232,9 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
     def enter(self):
         self.entered = True
         self.viewerToolbar.applyInterface()
-        if hasattr(slicer.modules, "DataProbeInstance"):
-            annotations = slicer.modules.DataProbeInstance.infoWidget.sliceAnnotations
+        probe = getattr(slicer.modules, "DataProbeInstance", None)
+        if probe is not None and probe.infoWidget is not None:
+            annotations = probe.infoWidget.sliceAnnotations
             annotations.sliceViewAnnotationsEnabled = False
             annotations.updateSliceViewFromGUI()
         red = slicer.app.layoutManager().sliceWidget("Red")
@@ -273,12 +274,32 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.updateControls()
 
     def chooseDirectory(self):
-        folder = qt.QFileDialog.getExistingDirectory(slicer.util.mainWindow(), "选择 DICOM 病例目录", str(ROOT.parent))
-        if folder:
+        initial = qt.QStandardPaths.writableLocation(qt.QStandardPaths.DocumentsLocation)
+        last_path = self.dataRoot / "last-project.json"
+        if last_path.is_file():
             try:
-                self.openDirectory(folder)
+                source = Path(json.loads(last_path.read_text(encoding="utf-8"))["source"])
+                if source.is_dir():
+                    initial = str(source)
+            except (OSError, ValueError, KeyError, TypeError):
+                logging.warning("Cannot restore the previous directory picker location", exc_info=True)
+        # Own this directory-only dialog instead of delegating folder opening to
+        # the operating system or Slicer's generic Add Data dialog.
+        dialog = qt.QFileDialog(slicer.util.mainWindow())
+        dialog.setObjectName("PneumoCaseDirectoryDialog")
+        dialog.setOption(qt.QFileDialog.DontUseNativeDialog, True)
+        dialog.setOption(qt.QFileDialog.ShowDirsOnly, True)
+        dialog.setOption(qt.QFileDialog.ReadOnly, True)
+        dialog.setFileMode(qt.QFileDialog.Directory)
+        dialog.setWindowTitle("选择胸片文件夹")
+        dialog.setDirectory(initial)
+        if dialog.exec() and dialog.selectedFiles():
+            try:
+                self.openDirectory(dialog.selectedFiles()[0])
             except Exception as exc:
+                logging.exception("Cannot open the selected chest-radiograph directory")
                 self.showError("打开失败：" + str(exc))
+        dialog.deleteLater()
 
     def openDirectory(self, source, projectDirectory=None, reader=None):
         if not self.prepareLeave():

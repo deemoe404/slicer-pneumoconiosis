@@ -73,7 +73,7 @@ jobs:
 
           Commit: $($build.commit)
           Includes the pinned Slicer build, a standalone Python runtime, CPU model and audio dependencies, and verified model weights.
-          Installer, offline backend, software-rendered GUI smoke check, reinstall and uninstall checks passed on Windows Server 2022 x64.
+          Installer, offline backend, normal GUI startup, single-instance protection, Unicode folder picker with Mac ZIP metadata, model/export, reinstall and uninstall checks passed on Windows Server 2022 x64. GUI checks use software rendering.
           Annotation data lives outside the program installation directory and is retained on uninstall.
           The installer is unsigned. Physical GPU, microphone and clinician acceptance remain separate.
           "@

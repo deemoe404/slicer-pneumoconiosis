@@ -176,7 +176,16 @@ def scan_cases(source):
     source = Path(source).expanduser().resolve()
     if not source.is_dir():
         raise ValueError("请选择存在的 DICOM 目录。")
-    paths = sorted(p for p in source.rglob("*") if p.is_file() and p.suffix.lower() == ".dcm")
+    if any(part == "__MACOSX" or part.startswith("._") for part in source.parts):
+        raise ValueError("这是 Mac 压缩包的辅助目录，请选择存放胸片的目录或解压后的上层目录。")
+    paths = []
+    for directory, subdirectories, filenames in os.walk(source):
+        # Finder ZIP archives contain AppleDouble files and a parallel resource tree.
+        subdirectories[:] = sorted(name for name in subdirectories
+                                   if name != "__MACOSX" and not name.startswith("._"))
+        paths.extend(Path(directory) / name for name in filenames
+                     if not name.startswith("._") and Path(name).suffix.lower() == ".dcm")
+    paths.sort()
 
     def read(path):
         try:
