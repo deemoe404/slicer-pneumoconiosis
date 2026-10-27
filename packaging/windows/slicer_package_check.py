@@ -46,7 +46,9 @@ try:
     expected_slicer = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["slicer"]
     REPORT["slicer_home"] = str(slicer.app.slicerHome)
     check(Path(REPORT["slicer_home"]).resolve() == (ROOT / "Slicer").resolve(), "Slicer runs from the relocated installation")
-    check(REPORT["slicer"].startswith(expected_slicer["version"]) and str(REPORT["revision"]) == expected_slicer["revision"],
+    revision = str(REPORT["revision"])
+    check(REPORT["slicer"].startswith(expected_slicer["version"]) and len(revision) >= 7
+          and expected_slicer["source_revision"].startswith(revision),
           "installed GUI uses the pinned official Slicer build")
     window = slicer.util.mainWindow()
     window.resize(1400, 950)

@@ -6,6 +6,7 @@
     "sha512": "99943f8aa828cf6981e1ce0d6ddcb5cdf3ffa8c1ccd5b45a4fd6291cf82b40fd2df47d78412a2316f9e9c8d26f8825a8b3f525e4b9cd4cb16c9d0a3f25ef5862",
     "version": "5.13.0",
     "revision": "35392",
+    "source_revision": "46891eee252d28fa8c2a89ddd98d8f85e8fc7064",
     "source": "https://download.slicer.org/?date=2026-10-22&stability=nightly&os=win&arch=amd64"
   },
   "inno": {
