@@ -104,7 +104,7 @@ def main():
     if (runtime / "pyvenv.cfg").exists():
         raise RuntimeError("The portable interpreter unexpectedly contains venv configuration.")
     # Preserve the app-local redistributable DLLs already included with Slicer.
-    for pattern in ("vcruntime*.dll", "msvcp*.dll", "concrt*.dll"):
+    for pattern in ("vcruntime*.dll", "msvcp*.dll", "concrt*.dll", "vcomp*.dll"):
         for dll in (PAYLOAD / "Slicer/bin").glob(pattern):
             shutil.copy2(dll, runtime / dll.name)
     python = runtime / "python.exe"
