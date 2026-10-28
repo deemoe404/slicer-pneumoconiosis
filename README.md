@@ -43,7 +43,7 @@
 
 ## 快速开始
 
-**Windows 使用离线安装包：**下载 `PneumoconiosisAnnotator-…-Setup.exe`，双击并允许管理员安装，之后从桌面「尘肺胸片标注」启动。包内已带 Slicer、独立 Python、模型与录音依赖和权重，无需另装开发环境。安装包及校验值由手动构建工作流保存到未发布的版本草稿；详见 [Windows 离线安装](docs/usage.md#windows-离线安装)。
+**Windows 使用离线安装包：**从[版本下载页](https://github.com/deemoe404/slicer-pneumoconiosis/releases/latest)下载 `PneumoconiosisAnnotator-…-Setup.exe`，双击并允许管理员安装，之后从桌面「尘肺胸片标注」启动。包内已带 Slicer、圆形工具、独立 Python、模型与录音依赖和权重，无需另装开发环境。下载页同时提供 SHA256、构建清单和安装检查报告；详见 [Windows 离线安装](docs/usage.md#windows-离线安装)。
 
 **macOS 或源码开发：**
 
@@ -72,7 +72,7 @@ SLICER_APP="$HOME/Applications/3D Slicer 5.13.0 2026-10-22.app" ./启动尘肺�
 1. 启动为空白；「选择胸片文件夹」，再「新建项目」（选择空文件夹）或「打开项目」（选择已有项目文件夹），然后选择自己的读者编号。
 2. 点选整片质量；需要补充意见时录入语音备注。
 3. 「自动肺野 / 六区」→核对并修正→「确认分区」。
-4. 拖动六条滑杆评分；无法评价的区域选择「不可评」。
+4. 点击或拖动六条分格滑杆评分；按 0、1、2、3 定位大档位，无法评价的区域选择「不可评」。
 5. 「完成并下一例」；需要交给研究者时点「导出交付包」，胸片另行交付。
 
 完整操作与常见问题见 [使用手册](docs/usage.md)。

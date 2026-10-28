@@ -27,7 +27,7 @@ def dismiss_unexpected_dialogs():
     dialog = qt.QApplication.activeModalWidget()
     if dialog is not None and dialog.objectName not in (
             "PneumoCaseDirectoryDialog", "PneumoReferenceDirectoryDialog", "PneumoNewProjectDialog",
-            "PneumoOpenProjectDialog", "PneumoBusyOverlay"):
+            "PneumoOpenProjectDialog", "PneumoLabelmeDirectoryDialog", "PneumoBusyOverlay"):
         unexpected_dialogs.append(str(dialog.windowTitle))
         dialog.close()
 
@@ -149,6 +149,20 @@ try:
     w.fitImage()
     REPORT["chinese_text"] = check_language(w, OUT / "language-check", check, events)
     REPORT["references"] = check_reference_view(w, OUT / "reference-check", check, events)
+    from PneumoconiosisLib.core import GRADES
+    check([label.text for label in w.gradeRuler.headings] == ["0", "1", "2", "3"]
+          and [label.text for label in w.gradeRuler.labels] == list(GRADES),
+          "installed rating ruler groups all twelve grades into four major levels")
+    slider = w.gradeSliders["RU"].slider
+    for step in (8, 2, 11, 0):
+        point = qt.QPoint(round((step + .5) * slider.width / len(GRADES)), slider.height // 2)
+        for kind, held in ((qt.QEvent.MouseButtonPress, qt.Qt.LeftButton), (qt.QEvent.MouseButtonRelease, qt.Qt.NoButton)):
+            event = qt.QMouseEvent(kind, qt.QPointF(point), qt.QPointF(slider.mapToGlobal(point)),
+                                  qt.Qt.LeftButton, held, qt.Qt.NoModifier)
+            slicer.app.sendEvent(slider, event)
+        saved = w.store.get(w.currentRecord["case_id"], w.currentReader)
+        check(slider.value == step and saved["zones"]["RU"]["grade"] == GRADES[step],
+              "installed slider clicks jump to and save " + GRADES[step])
     # The compiled extension must be usable in the relocated, offline installation.
     w.circleButton.click()
     circle = w.markups.nodes[w.markups.selected_id]
@@ -163,6 +177,34 @@ try:
           "bundled ExtraMarkups creates and saves a native circle offline")
     check("直径" in w.markups.labels[w.markups.selected_id].text,
           "native circle displays its measured diameter")
+    destination = OUT / "LabelMe 导出"
+    destination.mkdir()
+    labelme_visits = []
+    def choose_labelme():
+        for dialog in slicer.util.findChildren(window, name="PneumoLabelmeDirectoryDialog"):
+            if dialog.isVisible():
+                labelme_visits.append(True)
+                dialog.setDirectory(str(destination))
+                dialog.accept()
+    selector = qt.QTimer()
+    selector.connect("timeout()", choose_labelme)
+    selector.start(50)
+    try:
+        w.labelmeExport.button.click()
+    finally:
+        selector.stop()
+    check(labelme_visits and w.labelmeExport.worker is not None,
+          "installed LabelMe button selects a Unicode destination and starts its worker")
+    deadline = time.monotonic() + 60
+    while w.labelmeExport.worker is not None and time.monotonic() < deadline:
+        events(.1)
+    check(w.labelmeExport.worker is None and w.labelmeExport.last_result is not None and not w.labelmeExport.last_error,
+          "installed portable worker completes LabelMe export offline")
+    exported = Path(w.labelmeExport.last_result["directory"]) / w.currentReader
+    label = json.loads((exported / (w.currentRecord["case_id"] + ".json")).read_text(encoding="utf-8"))
+    check((exported / label["imagePath"]).is_file() and label["imageWidth"] == columns and label["imageHeight"] == rows
+          and len(label["shapes"]) == 1 and label["shapes"][0]["source_kind"] == "circle",
+          "installed LabelMe export pairs original-size PNG with the saved circle")
     w.deleteMarkupButton.click()
     w.features.qualityChoices.buttons[2].click()
     for slider in w.gradeSliders.values():

@@ -135,6 +135,24 @@ def run():
             finally:
                 store.close()
         check(restored() == expected, "GUI annotation survives application shutdown")
+        # Reuse the actual create/reopen/close checks against the installed files.
+        # Each phase gets a new normal Slicer process, including the real close guard.
+        workflow = OUT / "project-workflow"
+        profile = workflow / "profile"
+        profile.mkdir(parents=True)
+        markups = install / "extensions/ExtraMarkups/lib/Slicer-5.13/qt-loadable-modules"
+        workflow_environment = dict(environment, PNEUMO_WORKFLOW_OUT=str(workflow), PNEUMO_DATA_ROOT=str(profile))
+        workflow_environment["PATH"] = str(markups) + os.pathsep + environment["PATH"]
+        for phase in ("create", "reopen"):
+            workflow_environment["PNEUMO_WORKFLOW_PHASE"] = phase
+            with (workflow / (phase + ".log")).open("w", encoding="utf-8") as log:
+                checked([install / "Slicer/Slicer.exe", "--disable-settings", "--ignore-slicerrc", "--no-splash",
+                         "--additional-module-paths", markups, install / "PneumoconiosisAnnotator",
+                         "--python-script", install / "qa/slicer_project_check.py"],
+                        cwd=profile, env=workflow_environment, stdout=log, stderr=subprocess.STDOUT, timeout=180)
+            result = json.loads((workflow / (phase + "-report.json")).read_text(encoding="utf-8"))
+            check(result["status"] == "passed", "installed project workflow passes " + phase + " with normal application exit")
+            REPORT.setdefault("project_workflow", {})[phase] = result
         checked(command + ["/LOG=" + str(OUT / "reinstall.log")], timeout=300)
         check(restored() == expected, "reinstall preserves the external annotation project")
         for path in mesa_files:

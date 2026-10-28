@@ -85,7 +85,8 @@ def main():
                 "windows": INPUTS["windows"],
                 "slicer": INPUTS["slicer"], "python": sys.version,
                 "model": {"source": WEIGHTS_URL, "sha256": WEIGHTS_SHA256},
-                "data_location": "%LOCALAPPDATA%/PneumoconiosisAnnotator"}
+                "data_locations": {"projects": "User-selected annotation project directory",
+                                   "settings_and_logs": "%LOCALAPPDATA%/PneumoconiosisAnnotator"}}
     (PAYLOAD / "package.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
     slicer_installer = download(INPUTS["slicer"])
@@ -133,6 +134,7 @@ def main():
     shutil.copy2(ROOT / "packaging/windows/render_check.py", PAYLOAD / "qa/render_check.py")
     shutil.copy2(ROOT / "packaging/windows/reference_check.py", PAYLOAD / "qa/reference_check.py")
     shutil.copy2(ROOT / "packaging/windows/language_check.py", PAYLOAD / "qa/language_check.py")
+    shutil.copy2(ROOT / "scripts/slicer_project_check.py", PAYLOAD / "qa/slicer_project_check.py")
     sys.path.insert(0, str(ROOT / "tests"))
     from synthetic_pipeline import create_dicom
     create_dicom(PAYLOAD / "qa/dicom")

@@ -18,7 +18,7 @@ class LabelmeExport:
         self.last_result = self.last_error = None
         self.button = qt.QPushButton("导出 LabelMe")
         self.button.setObjectName("PneumoLabelmeExportButton")
-        self.button.setToolTip("按读者导出胸片 PNG 和椭圆 / 多边形标注，可在 LabelMe 中打开。")
+        self.button.setToolTip("按读者导出胸片 PNG 和圆形 / 多边形标注，可在 LabelMe 中打开。")
         self.button.connect("clicked()", self.choose)
 
     def choose(self):

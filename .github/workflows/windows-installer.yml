@@ -73,13 +73,18 @@ jobs:
           Windows x64 offline installer for the pneumoconiosis research annotator.
 
           Commit: $($build.commit)
-          Includes the pinned Slicer build, a standalone Python runtime, CPU model and audio dependencies, and verified model weights.
+          Includes the pinned Slicer build, matching ExtraMarkups circle tools, a standalone Python runtime, CPU model and audio dependencies, and verified model weights.
+          Starts empty: choose the chest-image directory, then explicitly create or open an annotation project. Source/project paths and save status remain visible; closing saves the project without Slicer's scene-save prompt.
+          Twelve discrete rating cells are grouped into four major levels; clicking a cell jumps directly to that grade. Native circles display diameter and polygons display width.
+          Research delivery exports all participating readers, annotations, attachments, image index and a manifest, without original DICOM images. LabelMe PNG/JSON export is a separate button.
+          Legacy point/ellipse annotations are not converted to circles; use a separate new project when the unsupported-annotation message appears. Existing files remain intact.
           Installer minimum: $($build.windows.minimum_release) x64 ($($build.windows.minimum_version)), based on Slicer's UTF-8 path requirements. This is a compatibility target; Windows 10 client versions still require on-device verification.
           Windows transitive dependencies are pinned to the previously delivered package. The minimum requirement is independent of the build runner's OS version.
           Load an external DICOM reference folder and compare standards beside the current case with independent viewing controls; reference images are not bundled.
           Installer, offline backend, normal GUI startup, UTF-8 process code page, single-instance protection, Unicode folder picker with Mac ZIP metadata, model/export, reinstall and uninstall checks passed on Windows Server 2022 x64. GUI checks use software rendering; this does not establish Windows 10 client compatibility.
           Reference comparison checks cover OT/CR loading, file navigation, independent window/level and zoom, case/markup isolation, and remembered or missing external folders.
           Bundles Chinese Slicer, CTK and Qt translations for offline use. Checks cover Chinese native widgets, folder drag-and-drop into the annotation workflow, one-click return from native modules, and UTF-8/GB18030 DICOM text decoding with synthetic metadata.
+          Installed GUI checks also exercise direct slider clicks, the compiled circle extension and actual offline LabelMe export. Separate normal processes verify project creation/reopening, save-failure exit protection, persisted pending changes and absence of scene-save prompts.
           Annotation data lives outside the program installation directory and is retained on uninstall.
           The installer is unsigned. Physical GPU, microphone and clinician acceptance remain separate.
           "@
