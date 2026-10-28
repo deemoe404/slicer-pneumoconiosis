@@ -12,6 +12,7 @@ import slicer
 ROOT = Path(os.environ.get("PNEUMO_APPLICATION_ROOT", Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from render_check import capture_rendered_view
+from reference_check import check_reference_view
 OUT = Path(os.environ["PNEUMO_TEST_OUTPUT"])
 OUT.mkdir(parents=True, exist_ok=True)
 REPORT = {"status": "failed", "checks": [], "synthetic_only": True}
@@ -20,7 +21,7 @@ unexpected_dialogs = []
 
 def dismiss_unexpected_dialogs():
     dialog = qt.QApplication.activeModalWidget()
-    if dialog is not None and dialog.objectName != "PneumoCaseDirectoryDialog":
+    if dialog is not None and dialog.objectName not in ("PneumoCaseDirectoryDialog", "PneumoReferenceDirectoryDialog"):
         unexpected_dialogs.append(str(dialog.windowTitle))
         dialog.close()
 
@@ -123,6 +124,7 @@ try:
     window.resize(1400, 950)
     events(.3)
     w.fitImage()
+    REPORT["references"] = check_reference_view(w, OUT / "reference-check", check, events)
     w.features.qualityChoices.buttons[2].click()
     for slider in w.gradeSliders.values():
         slider.set_value("0/0")
@@ -131,14 +133,25 @@ try:
     deadline = time.monotonic() + 90
     while w.features.jobs and time.monotonic() < deadline:
         events(.1)
+    if w.features.jobs or w.features.partition.state is None:
+        REPORT["model_error"] = {"message": str(w.saveLabel.text), "button_enabled": w.features.autoButton.isEnabled(),
+                                 "jobs": list(w.features.jobs), "case": w.currentRecord["case_id"]}
     check(not w.features.jobs and w.features.partition.state is not None, "GUI runs the real lung model through QProcess")
     program = w.features.model_worker.process.program()
     check(Path(program).resolve() == python_executable(ROOT).resolve(), "QProcess uses the installed portable Python")
     check(w.features.partition.state["state"] == "pending_review", "machine partition awaits confirmation")
     check(w.features.partition.overlay.GetSegmentation().GetNumberOfSegments() == 6, "six native overlay segments are present")
+    reference_view = slicer.app.layoutManager().sliceWidget("PneumoReference")
+    check(reference_view.mrmlSliceCompositeNode().GetBackgroundVolumeID() == w.references.volume.GetID()
+          and all(not node.GetDisplayNode().IsDisplayableInView(reference_view.mrmlSliceNode().GetID())
+                  for node in (w.features.partition.lungs, w.features.partition.overlay, w.features.partition.anchors)),
+          "model inference uses the case and its lung overlays do not appear on the standard")
     w.features.confirmButton.click()
     check(w.completeCase(), "quality, six scores and explicit confirmation complete the case")
     check(w.currentRecord["status"] == "complete" and w.flushSave(), "completed annotation is saved outside the program files")
+    w.fitImage()
+    w.references.fit()
+    events(.1)
     paths = w.exportResults(OUT / "gui-exports")
     check(all(path.is_file() for path in paths), "installed GUI exports the CSV and JSON bundle")
     report_path = paths[1]

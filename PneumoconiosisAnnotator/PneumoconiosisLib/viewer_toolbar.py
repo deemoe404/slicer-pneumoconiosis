@@ -3,6 +3,8 @@ import qt
 import slicer
 import vtk
 
+from .image_view import set_background
+
 
 class ViewerToolbar:
     def __init__(self, widget):
@@ -53,6 +55,12 @@ class ViewerToolbar:
         self.fitButton.connect("clicked()", self.w.fitImage)
         self.resetButton = self._button(row, "原始灰度", "恢复读取这张胸片时的窗宽、窗位与灰度映射。")
         self.resetButton.connect("clicked()", self.w.resetDisplay)
+        self.referenceFolderButton = self._button(row, "标准片", "从外部文件夹加载标准片，在当前胸片右侧对照。")
+        self.referenceFolderButton.connect("clicked()", lambda: self.w.references.choose_directory())
+        self.referenceButton = self._button(row, "对照", "显示或收起已经加载的标准片。")
+        self.referenceButton.setCheckable(True)
+        self.referenceButton.setEnabled(False)
+        self.referenceButton.connect("clicked(bool)", lambda checked: self.w.references.set_visible(checked))
         row.addStretch(1)
         self.fullButton = self._button(row, "完整 Slicer 界面", "展开原生工具栏、模块选择器和视图控制；可再次点击返回。")
         self.fullButton.connect("clicked()", lambda: self.setFullInterface(not self.fullInterface))
@@ -71,7 +79,7 @@ class ViewerToolbar:
         return button
 
     def setMouseMode(self, mode):
-        if self.w.volume is None:
+        if self.w.volume is None and self.w.references.volume is None:
             return
         self.w.markups.finish()
         self.w.features.partition.close_editor()
@@ -86,7 +94,10 @@ class ViewerToolbar:
 
     def updateControls(self):
         active = self.w.volume is not None and self.w.currentRecord is not None
-        for button in (self.windowLevelButton, self.transformButton, self.fitButton, self.resetButton):
+        references = getattr(self.w, "references", None)
+        for button in (self.windowLevelButton, self.transformButton):
+            button.setEnabled(active or (references is not None and references.volume is not None))
+        for button in (self.fitButton, self.resetButton):
             button.setEnabled(active)
         if self.observedVolume is not self.w.volume:
             self._stopObservingDisplay()
@@ -126,12 +137,15 @@ class ViewerToolbar:
                 view.sliceController().setVisible(visible)
 
     def applyInterface(self):
-        self._showNativeControls(self.fullInterface)
+        references = getattr(self.w, "references", None)
         if not self.fullInterface:
-            slicer.app.layoutManager().setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutOneUpRedSliceView)
-            slicer.app.layoutManager().sliceWidget("Red").sliceController().hide()
+            if references is not None:
+                references.apply_layout()
+            else:
+                slicer.app.layoutManager().setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutOneUpRedSliceView)
             if self.w.volume is not None:
-                slicer.util.setSliceViewerLayers(background=self.w.volume)
+                set_background(self.w.volume)
+        self._showNativeControls(self.fullInterface)
         self.fullButton.setText("精简标注界面" if self.fullInterface else "完整 Slicer 界面")
         self.fullButton.setAccessibleName(self.fullButton.text)
         self.frame.show()

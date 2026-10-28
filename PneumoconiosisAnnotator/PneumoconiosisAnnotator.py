@@ -10,7 +10,6 @@ from pathlib import Path
 
 import qt
 import slicer
-import vtk
 from slicer.ScriptedLoadableModule import ScriptedLoadableModule, ScriptedLoadableModuleWidget
 
 MODULE_DIR = Path(__file__).resolve().parent
@@ -28,6 +27,8 @@ from PneumoconiosisLib.core import validate_quality
 from PneumoconiosisLib.partition import validate_partition
 from PneumoconiosisLib.grade_slider import GradeRuler, GradeSlider
 from PneumoconiosisLib.viewer_toolbar import ViewerToolbar
+from PneumoconiosisLib.image_view import orient_image, remove_volume, set_background
+from PneumoconiosisLib.reference_view import ReferenceView, VIEW_NAME as REFERENCE_VIEW
 from PneumoconiosisLib.runtime import data_directory
 
 
@@ -61,15 +62,24 @@ class PictureWheelGuard(qt.QWidget):
         self.widget = widget
 
     def eventFilter(self, obj, event):
-        if event.type() != qt.QEvent.Wheel or not self.widget.entered or self.widget.volume is None:
+        if event.type() != qt.QEvent.Wheel or not self.widget.entered:
             return False
-        view = slicer.app.layoutManager().sliceWidget("Red").sliceView()
-        if not obj.isWidgetType() or not (obj == view or view.isAncestorOf(obj)):
+        if not obj.isWidgetType():
+            return False
+        manager = slicer.app.layoutManager()
+        node = None
+        for name, volume in (("Red", self.widget.volume), (REFERENCE_VIEW, self.widget.references.volume)):
+            widget = manager.sliceWidget(name)
+            if widget is not None and volume is not None:
+                view = widget.sliceView()
+                if obj == view or view.isAncestorOf(obj):
+                    node = widget.mrmlSliceNode()
+                    break
+        if node is None:
             return False
         delta = event.angleDelta().y()
         if not delta:
             return False
-        node = slicer.app.layoutManager().sliceWidget("Red").mrmlSliceNode()
         fov = node.GetFieldOfView()
         factor = 2.0 ** (max(-1200, min(1200, delta)) / 600.0)
         node.SetFieldOfView(fov[0] / factor, fov[1] / factor, fov[2])
@@ -220,6 +230,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.retryButton.hide()
         self.layout.addWidget(self.retryButton)
         self.viewerToolbar = ViewerToolbar(self)
+        self.references = ReferenceView(self, self.viewerToolbar)
 
         self.layout.addStretch(1)
         self.closeGuard = CloseGuard(self)
@@ -231,6 +242,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def enter(self):
         self.entered = True
+        self.references.restore_once()
         self.viewerToolbar.applyInterface()
         probe = getattr(slicer.modules, "DataProbeInstance", None)
         if probe is not None and probe.infoWidget is not None:
@@ -247,6 +259,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
     def cleanup(self):
         self.saveTimer.stop()
         self.prepareLeave()
+        self.references.close()
         self.viewerToolbar.close()
         self.features.close()
         self.markups.close()
@@ -265,6 +278,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def onSceneClose(self, *_):
         saved = self.prepareLeave()
+        self.references.clear()
         self.features.clear(preserve=not saved)
         self.markups.clear()
         self.volume = None
@@ -404,32 +418,14 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         except Exception:
             if created is not None:
                 slicer.mrmlScene.RemoveNode(created)
-            if previous_selection:
-                slicer.util.setSliceViewerLayers(background=previous_selection)
+            if self.volume is not None:
+                set_background(self.volume)
+                slicer.app.applicationLogic().GetSelectionNode().SetActiveVolumeID(previous_selection)
             raise
 
     def _orientImage(self):
         """Display stored columns left-to-right and stored rows top-to-bottom, without guessing anatomy."""
-        import numpy as np
-        matrix = vtk.vtkMatrix4x4()
-        self.volume.GetIJKToRASMatrix(matrix)
-        x = np.array([matrix.GetElement(r, 0) for r in range(3)])
-        y = -np.array([matrix.GetElement(r, 1) for r in range(3)])
-        x /= np.linalg.norm(x)
-        y /= np.linalg.norm(y)
-        n = np.cross(x, y)
-        dimensions = self.volume.GetImageData().GetDimensions()
-        center = matrix.MultiplyPoint([(v - 1) / 2 for v in dimensions] + [1])
-        pose = vtk.vtkMatrix4x4()
-        pose.Identity()
-        for row in range(3):
-            for col, vector in enumerate((x, y, n)):
-                pose.SetElement(row, col, float(vector[row]))
-            pose.SetElement(row, 3, center[row])
-        node = slicer.app.layoutManager().sliceWidget("Red").mrmlSliceNode()
-        node.GetSliceToRAS().DeepCopy(pose)
-        node.UpdateMatrices()
-        self.fitImage()
+        orient_image(self.volume)
 
     def selectCase(self, index):
         if self.updating:
@@ -451,17 +447,11 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.volume = new_volume
         self.currentIndex = index
         self.currentRecord = self.store.get(self.cases[index]["case_id"], self.currentReader)
-        slicer.util.setSliceViewerLayers(background=new_volume)
+        set_background(new_volume)
         self._orientImage()
         self._restoreDisplay(self.currentRecord.get("display", {}))
         self._restoreSpatial()
-        if old_volume:
-            sh = slicer.vtkMRMLSubjectHierarchyNode.GetSubjectHierarchyNode(slicer.mrmlScene)
-            item = sh.GetItemByDataNode(old_volume)
-            if item:
-                sh.RemoveItem(item)
-            else:
-                slicer.mrmlScene.RemoveNode(old_volume)
+        remove_volume(old_volume)
         self._populate()
         self.features.restore()
         self.store.set_preference("last_case:" + self.currentReader, self.cases[index]["case_id"])
