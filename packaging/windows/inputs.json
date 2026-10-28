@@ -1,5 +1,9 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
+  "windows": {
+    "minimum_version": "10.0.18362",
+    "minimum_release": "Windows 10 1903"
+  },
   "slicer": {
     "filename": "Slicer-5.13.0-r35392-win-x64.exe",
     "url": "https://download.slicer.org/bitstream/6ad869ba32e5d6bfbf6bbd95",

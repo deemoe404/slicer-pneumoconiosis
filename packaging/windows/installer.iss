@@ -10,6 +10,12 @@
 #ifndef BuildId
   #define BuildId "local"
 #endif
+#ifndef MinimumWindowsVersion
+  #error MinimumWindowsVersion must come from inputs.json
+#endif
+#ifndef MinimumWindowsRelease
+  #error MinimumWindowsRelease must come from inputs.json
+#endif
 
 [Setup]
 AppId={{FD48D678-6B2D-4BDF-9664-84203732C037}
@@ -24,7 +30,9 @@ OutputDir={#Output}
 OutputBaseFilename=PneumoconiosisAnnotator-{#AppVersion}-windows-x64-{#BuildId}-Setup
 ArchitecturesAllowed=x64os
 ArchitecturesInstallIn64BitMode=x64os
-MinVersion=10.0.20348
+; Slicer's per-process UTF-8 code page requires Windows 10 1903.
+; The build runner's Windows Server version is not the application's minimum.
+MinVersion={#MinimumWindowsVersion}
 PrivilegesRequired=admin
 Compression=lzma2/normal
 SolidCompression=yes
@@ -38,6 +46,12 @@ SetupLogging=yes
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Messages]
+chinesesimplified.WindowsVersionNotSupported=本程序需要 {#MinimumWindowsRelease} 或更高版本（64 位），系统内部版本至少为 {#MinimumWindowsVersion}。
+chinesesimplified.WinVersionTooLowError=本程序需要 {#MinimumWindowsRelease} 或更高版本（64 位），系统内部版本至少为 {#MinimumWindowsVersion}。
+english.WindowsVersionNotSupported=This program requires 64-bit {#MinimumWindowsRelease} or later (minimum OS version {#MinimumWindowsVersion}).
+english.WinVersionTooLowError=This program requires 64-bit {#MinimumWindowsRelease} or later (minimum OS version {#MinimumWindowsVersion}).
 
 [Files]
 Source: "{#Payload}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

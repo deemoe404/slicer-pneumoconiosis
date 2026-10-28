@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import platform
 import sys
 import time
 import traceback
@@ -15,7 +16,8 @@ from render_check import capture_rendered_view
 from reference_check import check_reference_view
 OUT = Path(os.environ["PNEUMO_TEST_OUTPUT"])
 OUT.mkdir(parents=True, exist_ok=True)
-REPORT = {"status": "failed", "checks": [], "synthetic_only": True}
+REPORT = {"status": "failed", "checks": [], "synthetic_only": True,
+          "platform": platform.platform(), "architecture": platform.machine()}
 unexpected_dialogs = []
 
 
@@ -46,6 +48,12 @@ def events(seconds=.1):
 
 
 try:
+    if sys.platform == "win32":
+        import ctypes
+        REPORT["windows_version"] = list(sys.getwindowsversion()[:3])
+        REPORT["windows_active_code_page"] = ctypes.windll.kernel32.GetACP()
+        check(REPORT["windows_active_code_page"] == 65001,
+              "Slicer uses a UTF-8 process code page for Unicode paths")
     check("--testing" not in slicer.app.arguments(), "GUI starts with normal application flags, without Slicer testing mode")
     startup = ROOT / "scripts/start.py"
     exec(compile(startup.read_text(encoding="utf-8"), str(startup), "exec"), {"__file__": str(startup), "__name__": "package_startup"})

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,8 @@ def run():
     if install.exists():
         raise RuntimeError("Refusing to reuse an existing test installation.")
     REPORT.update(commit=metadata["commit"], installer=installer.name, sha256=file_sha256(installer),
+                  windows_requirement=metadata["windows"], platform=platform.platform(),
+                  windows_version=list(sys.getwindowsversion()[:3]), architecture=platform.machine(),
                   installation=str(install), graphics="Mesa llvmpipe (test only; not shipped)")
     command = [installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=" + str(install)]
     checked(command + ["/LOG=" + str(OUT / "install.log")], timeout=300)
@@ -162,7 +165,9 @@ def main():
                 if path.is_file():
                     archive.write(path, path.relative_to(OUT))
         summary = "## Windows offline installer: " + REPORT["status"] + "\n\n" + "\n".join("- " + item for item in REPORT["checks"])
-        summary += "\n\nGUI smoke checks use a synthetic image and test-only Mesa software rendering; physical GPU and microphone acceptance remain separate.\n"
+        summary += "\n\nTest host: " + REPORT.get("platform", "unavailable") + ".\n"
+        summary += "\nThe installer's minimum OS requirement is a compatibility target, not evidence that this run tested that OS.\n"
+        summary += "\nGUI smoke checks use a synthetic image and test-only Mesa software rendering; physical GPU and microphone acceptance remain separate.\n"
         if os.environ.get("GITHUB_STEP_SUMMARY"):
             with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
                 stream.write(summary)

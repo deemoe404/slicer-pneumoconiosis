@@ -139,7 +139,7 @@ local-data/
 
 ## 安装与启动排查
 
-普通评分使用 Slicer 内置组件；模型、录音和回放使用项目 `.venv`。出现依赖或权重未准备提示时，在仓库目录重新运行 `mise exec -- python scripts/prepare_runtime.py`。脚本安装直接依赖的指定版本，不使用全局 Python；依赖文件未锁定完整传递依赖树。
+普通评分使用 Slicer 内置组件；源码版的模型、录音和回放使用项目 `.venv`，Windows 安装版使用随包提供的独立运行环境。源码版出现依赖或权重未准备提示时，在仓库目录重新运行 `mise exec -- python scripts/prepare_runtime.py`。脚本不使用全局 Python；Windows 使用 `requirements-windows-lock.txt` 固定完整依赖版本，其他平台仅固定直接依赖。
 
 Mac 启动路径不同时，用 README 的 `SLICER_APP=... ./启动尘肺标注.command` 命令指定。终端中的临时环境变量不会自动传给另一次 Finder 双击启动。也可在 Slicer 附加模块路径中加入仓库内 `PneumoconiosisAnnotator` 目录，重启后从 Research 分类打开模块。
 
@@ -193,7 +193,7 @@ mise exec -- python scripts/prepare_runtime.py
 
 ## Windows 离线安装
 
-安装包面向 Windows 11 x64。下载 `PneumoconiosisAnnotator-<版本>-windows-x64-<提交>-Setup.exe` 及对应 `.sha256` 校验文件，双击安装包并允许管理员安装，安装完成后从桌面「尘肺胸片标注」进入。日常使用不需要管理员权限，也无需安装 Python、mise 或额外的 Slicer。模型权重及依赖均随包提供，安装和模型推理可离线执行。
+安装包从 0.2.1 起允许 **Windows 10 1903（内部版本 18362）及以上的 64 位系统**安装，包括 Windows 10 22H2、Windows 10 LTSC 2021 和 Windows 11。下载 `PneumoconiosisAnnotator-<版本>-windows-x64-<提交>-Setup.exe` 及对应 `.sha256` 校验文件，双击安装包并允许管理员安装，安装完成后从桌面「尘肺胸片标注」进入。日常使用不需要管理员权限，也无需安装 Python、mise 或额外的 Slicer。模型权重及依赖均随包提供，安装和模型推理可离线执行；模型使用 CPU，无需 CUDA。
 
 默认程序目录是 `C:\Program Files\PneumoconiosisAnnotator`。Slicer 的程序路径须使用英文，病例和用户数据目录可以使用中文。首次打开后选择自己的胸片目录和读者编号；程序不会把合成病例当成真实标注项目。
 
@@ -201,9 +201,23 @@ mise exec -- python scripts/prepare_runtime.py
 
 标注数据位于 `%LOCALAPPDATA%/PneumoconiosisAnnotator/`。重装和卸载程序保留该目录；备份及原始 DICOM 的要求与源码版相同。启动日志在其 `logs/` 子目录内。安装包尚未做代码签名，Windows 可能显示未知发布者提示。
 
+### Windows 版本依据与验证范围
+
+最低版本配置集中在 [inputs.json](../packaging/windows/inputs.json) 的 `windows` 字段，由构建脚本传给安装器并记录进构建清单。此前的 `10.0.20348` 对应构建服务器的系统版本，会误拦 Windows 10 22H2；它不是程序本身必须使用的系统接口下限。0.2.1 将门槛降为 `10.0.18362`，低于门槛时显示具体要求。
+
+| 组件 / 功能 | 本次核对的依据 |
+| --- | --- |
+| Slicer 5.13.0 r35392、中文病例及用户目录 | 固定源码的 [UTF-8 测试](https://github.com/Slicer/Slicer/blob/46891eee252d28fa8c2a89ddd98d8f85e8fc7064/Libs/MRML/Widgets/Testing/qMRMLUtf8Test1.cxx)明确指出 Windows 10 1903 以前不具备预期的进程 UTF-8 代码页；[微软文档](https://learn.microsoft.com/en-us/windows/apps/design/globalizing/use-utf8-code-page)确认该能力从 1903 开始提供。这决定当前完整中文工作流的最低目标 |
+| Python 3.12 | Slicer 内置 3.12.10，后台固定 3.12.12；[Python 官方说明](https://docs.python.org/3.12/using/windows.html)最低为 Windows 8.1，本身不要求 Windows 11 |
+| 模型及音频库 | 保持 0.2.0 已交付包的版本，包括 Torch 2.14.1 CPU、NumPy 2.5.4、SciPy 1.18.1 和 sounddevice 0.5.6，并固定传递依赖；库版本与安装门槛不能代替旧系统上的实际加载和运行检查 |
+
+Windows 7、8、8.1，以及 Windows 10 1809 / LTSC 2019 和更早版本，暂不在当前完整中文工作流的支持目标内。这个结论不等于每个组件都无法在这些系统启动。Slicer 上游当前以 Windows 11 为受测平台，[明确表示旧系统可能仍可运行，但不再测试](https://slicer.readthedocs.io/en/latest/user_guide/getting_started.html#operating-system-versions)。本项目因此将安装门槛与实际验证证据分开记录。
+
+目前自动化运行环境是 **Windows Server 2022 x64**。Windows 10 1903、LTSC 2021、22H2 的实机验收尚待完成，不能将服务器上的通过结果当作这些版本已验证。图形驱动还需提供 OpenGL 3.2 或以上；真实麦克风和录音须在目标电脑检查。界面检查报告记录操作系统、构建号、进程代码页和实际渲染器，检查 Slicer 使用 UTF-8 后再验证中文目录、标准片、推理、保存和导出。
+
 ### 构建与安装验证
 
-[Windows offline installer](../.github/workflows/windows-installer.yml)工作流只在手动执行时构建大安装包，普通代码推送仍运行轻量后台检查。固定 Slicer、Inno Setup 和测试用 Mesa 的版本、下载地址与哈希见 [inputs.json](../packaging/windows/inputs.json)。后台环境使用 mise 提供的可迁移 standalone Python，加上项目依赖；不会复制开发环境的 venv 启动器。
+[Windows offline installer](../.github/workflows/windows-installer.yml)工作流只在手动执行时构建大安装包，普通代码推送仍运行轻量后台检查。固定 Slicer、Inno Setup 和测试用 Mesa 的版本、下载地址与哈希见 [inputs.json](../packaging/windows/inputs.json)。后台环境使用 mise 提供的可迁移 standalone Python，加上 Windows 依赖锁定文件；不会复制开发环境的 venv 启动器。
 
 流水线先运行核心测试，再生成安装包，安装到新目录，核对全部程序文件哈希，并对已安装的后台进程阻断出站网络，运行合成病例。随后通过正式启动器以正常界面模式打开安装后的 Slicer，验证重复启动只有一个实例，并实际点击「打开目录」，通过文件夹选择窗口导入带中文、空格及 Mac 辅助文件的合成目录，再检查真实 QProcess 模型推理、六区、确认、保存和导出，最后验证重装与卸载保留外部数据。界面检查临时使用 Mesa 软件 OpenGL，Mesa 不包含在交付安装包中；真实显卡、麦克风和医生验收另行进行。
 

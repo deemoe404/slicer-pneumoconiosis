@@ -11,8 +11,10 @@ environment = ROOT / ".venv"
 python = environment / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
 if not python.exists():
     venv.EnvBuilder(with_pip=True).create(environment)
+constraints = ["-c", str(ROOT / "requirements-windows-lock.txt")] if sys.platform == "win32" else []
 if sys.platform in ("win32", "linux"):
+    # Fetch CPU wheels here; resolve all other dependencies from PyPI below.
     subprocess.run([str(python), "-m", "pip", "install", "torch==2.14.1", "torchvision==0.29.1",
-                    "--index-url", "https://download.pytorch.org/whl/cpu"], check=True)
-subprocess.run([str(python), "-m", "pip", "install", "-r", str(ROOT / "requirements-runtime.txt")], check=True)
+                    "--index-url", "https://download.pytorch.org/whl/cpu", "--no-deps", *constraints], check=True)
+subprocess.run([str(python), "-m", "pip", "install", "-r", str(ROOT / "requirements-runtime.txt"), *constraints], check=True)
 subprocess.run([str(python), str(ROOT / "scripts" / "prepare_model.py")], check=True)

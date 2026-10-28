@@ -82,6 +82,7 @@ def main():
     PAYLOAD.mkdir(parents=True)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     metadata = {"version": INPUTS["version"], "commit": commit, "built_at": utc_now(),
+                "windows": INPUTS["windows"],
                 "slicer": INPUTS["slicer"], "python": sys.version,
                 "model": {"source": WEIGHTS_URL, "sha256": WEIGHTS_SHA256},
                 "data_location": "%LOCALAPPDATA%/PneumoconiosisAnnotator"}
@@ -117,7 +118,7 @@ def main():
     for name in ("feature_worker.py", "start.py"):
         shutil.copy2(ROOT / "scripts" / name, PAYLOAD / "scripts" / name)
     copy_tree(ROOT / "docs", PAYLOAD / "docs")
-    for name in ("README.md", "LICENSE", "requirements-runtime.txt", "requirements-test.txt"):
+    for name in ("README.md", "LICENSE", "requirements-runtime.txt", "requirements-test.txt", "requirements-windows-lock.txt"):
         shutil.copy2(ROOT / name, PAYLOAD / name)
     (PAYLOAD / "qa").mkdir()
     shutil.copy2(ROOT / "tests/synthetic_pipeline.py", PAYLOAD / "qa/synthetic_pipeline.py")
@@ -153,7 +154,10 @@ def main():
     inno = TOOLS / "inno"
     checked([download(INPUTS["inno"]), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=" + str(inno)], timeout=180)
     checked([inno / "ISCC.exe", "/DPayload=" + str(PAYLOAD), "/DOutput=" + str(OUTPUT),
-             "/DAppVersion=" + INPUTS["version"], "/DBuildId=" + commit[:7], ROOT / "packaging/windows/installer.iss"], timeout=1200)
+             "/DAppVersion=" + INPUTS["version"], "/DBuildId=" + commit[:7],
+             "/DMinimumWindowsVersion=" + INPUTS["windows"]["minimum_version"],
+             "/DMinimumWindowsRelease=" + INPUTS["windows"]["minimum_release"],
+             ROOT / "packaging/windows/installer.iss"], timeout=1200)
     installer = next(OUTPUT.glob("*-Setup.exe"))
     if installer.stat().st_size >= 2 * 1024 ** 3:
         raise RuntimeError("Installer exceeds the release asset limit.")

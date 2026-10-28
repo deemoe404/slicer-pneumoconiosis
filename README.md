@@ -34,9 +34,9 @@
 | 输入 | 扩展名 `.dcm` 的单帧 CR/DX 灰度 DICOM，支持递归扫描子目录 |
 | 标准片 | 外部文件夹中的单帧灰度 DICOM，支持 OT 等类型；不随软件分发 |
 | 录音 | 系统默认麦克风、音频输出及麦克风访问许可 |
-| Windows | Windows 11 x64；提供 [离线安装包构建与安装检查](.github/workflows/windows-installer.yml)及[后台自动测试](.github/workflows/windows-x64.yml)。云端界面检查使用软件渲染；目标电脑的显卡和麦克风需单独验收 |
+| Windows | 安装门槛为 **Windows 10 1903（内部版本 18362）及以上的 64 位系统**，包括 Windows 10 22H2 和 Windows 11；最低版本是依赖审查后的兼容目标，旧版 Windows 尚待实机验证。现有[安装检查](.github/workflows/windows-installer.yml)及[后台自动测试](.github/workflows/windows-x64.yml)运行在 Windows Server 2022，界面检查使用软件渲染；见[版本依据与验证范围](docs/usage.md#windows-版本依据与验证范围) |
 
-环境分为两层：Slicer 自带 Python 运行界面和影像组件；项目用 **mise → venv → pip** 管理 `.venv` 中的模型及音频依赖，通过后台进程调用。无需向 Slicer Python 或全局 Python 安装这些依赖。直接依赖版本见 [requirements-runtime.txt](requirements-runtime.txt)。
+环境分为两层：Slicer 自带 Python 运行界面和影像组件；项目用 **mise → venv → pip** 管理 `.venv` 中的模型及音频依赖，通过后台进程调用。无需向 Slicer Python 或全局 Python 安装这些依赖。直接依赖版本见 [requirements-runtime.txt](requirements-runtime.txt)；Windows 的完整依赖版本由 [requirements-windows-lock.txt](requirements-windows-lock.txt) 固定，避免重新打包时传递依赖变化影响兼容性。
 
 ## 快速开始
 

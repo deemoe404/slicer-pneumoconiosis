@@ -73,8 +73,10 @@ jobs:
 
           Commit: $($build.commit)
           Includes the pinned Slicer build, a standalone Python runtime, CPU model and audio dependencies, and verified model weights.
+          Installer minimum: $($build.windows.minimum_release) x64 ($($build.windows.minimum_version)), based on Slicer's UTF-8 path requirements. This is a compatibility target; Windows 10 client versions still require on-device verification.
+          Windows transitive dependencies are pinned to the previously delivered package. The minimum requirement is independent of the build runner's OS version.
           Load an external DICOM reference folder and compare standards beside the current case with independent viewing controls; reference images are not bundled.
-          Installer, offline backend, normal GUI startup, single-instance protection, Unicode folder picker with Mac ZIP metadata, model/export, reinstall and uninstall checks passed on Windows Server 2022 x64. GUI checks use software rendering.
+          Installer, offline backend, normal GUI startup, UTF-8 process code page, single-instance protection, Unicode folder picker with Mac ZIP metadata, model/export, reinstall and uninstall checks passed on Windows Server 2022 x64. GUI checks use software rendering; this does not establish Windows 10 client compatibility.
           Reference comparison checks cover OT/CR loading, file navigation, independent window/level and zoom, case/markup isolation, and remembered or missing external folders.
           Annotation data lives outside the program installation directory and is retained on uninstall.
           The installer is unsigned. Physical GPU, microphone and clinician acceptance remain separate.
