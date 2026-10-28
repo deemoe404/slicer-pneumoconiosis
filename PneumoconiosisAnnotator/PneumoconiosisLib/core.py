@@ -202,6 +202,7 @@ def scan_cases(source):
         return {
             "case_id": "CXR-" + hashlib.sha256(sop.encode()).hexdigest()[:16],
             "file_path": str(path), "source_sha256": file_sha256(path),
+            "source_relative_path": path.relative_to(source).as_posix(),
             "sop_uid": sop, "study_uid": str(ds.StudyInstanceUID), "series_uid": str(ds.SeriesInstanceUID),
             "rows": int(ds.Rows), "columns": int(ds.Columns), "modality": str(ds.Modality),
             "orientation_known": bool(ds.get("ImageOrientationPatient")) and bool(ds.get("ViewPosition")),
@@ -360,16 +361,23 @@ class AnnotationStore:
         return recovered
 
     def export(self, destination, case_ids, reader):
-        """Export one reader's consistent snapshot, including unread cases, without source identifiers."""
+        """Export one reader's snapshot and a relative-path index of its source images."""
         reader = validate_reader(reader)
         destination = Path(destination).expanduser().resolve()
         destination.mkdir(parents=True, exist_ok=True)
         with self.connection:
             self.connection.execute("BEGIN")
             records = [self.get(case_id, reader) for case_id in case_ids]
+            images = []
             for record in records:
                 metadata = json.loads(self.connection.execute("SELECT metadata_json FROM cases WHERE case_id=?", (record["case_id"],)).fetchone()[0])
                 record["image"] = {k: metadata[k] for k in ("columns", "rows")}
+                if not metadata.get("source_relative_path"):
+                    raise ValueError("缺少原片相对路径，请重新打开胸片目录后再导出。")
+                # ./ preserves the exact filename while preventing spreadsheet formulas.
+                images.append({"case_id": record["case_id"],
+                               "source_relative_path": "./" + metadata["source_relative_path"],
+                               "source_sha256": metadata["source_sha256"]})
             # The audit history and current ratings belong to the same read transaction.
             wanted = set(case_ids)
             history = [{"revision": r[0], "at": r[2], "annotation": json.loads(r[3])}
@@ -409,6 +417,7 @@ class AnnotationStore:
         json_path = temporary / (stem + ".json")
         csv_path = temporary / (stem + ".csv")
         spatial_path = temporary / (stem + "-spatial.csv")
+        images_path = temporary / (stem + "-images.csv")
         buffer = io.StringIO(newline="")
         fields = ["case_id", "reader_id", "status", "standard", "quality_grade", "quality_name", "quality_reason",
                   "zone", "zone_name", "state", "profusion_code", "major_category", "alternative_category",
@@ -441,11 +450,16 @@ class AnnotationStore:
                            "state": annotation["state"], "vertex_index": index,
                            "i": point[0], "j": point[1], "k": point[2], **record["image"]}
                     spatial_writer.writerow({key: csv_safe(value) for key, value in row.items()})
+        images_buffer = io.StringIO(newline="")
+        images_writer = csv.DictWriter(images_buffer, fieldnames=["case_id", "source_relative_path", "source_sha256"])
+        images_writer.writeheader()
+        images_writer.writerows(images)
         atomic_write(json_path, json.dumps(package, ensure_ascii=False, indent=2, allow_nan=False))
         atomic_write(csv_path, "\ufeff" + buffer.getvalue())
         atomic_write(spatial_path, "\ufeff" + spatial_buffer.getvalue())
+        atomic_write(images_path, "\ufeff" + images_buffer.getvalue())
         os.replace(temporary, final_directory)
-        return tuple(final_directory / p.name for p in (csv_path, json_path, spatial_path))
+        return tuple(final_directory / p.name for p in (csv_path, json_path, spatial_path, images_path))
 
 
 def csv_safe(value):

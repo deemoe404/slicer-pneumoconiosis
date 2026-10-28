@@ -22,7 +22,8 @@ class FeatureTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary.name)
         self.store = AnnotationStore(self.directory)
-        self.cases = [{"case_id": "CXR-" + str(i), "source_sha256": "sha" + str(i), "columns": 100, "rows": 100} for i in range(2)]
+        self.cases = [{"case_id": "CXR-" + str(i), "source_sha256": "sha" + str(i),
+                       "source_relative_path": f"image-{i}.dcm", "columns": 100, "rows": 100} for i in range(2)]
         self.store.import_cases(self.cases)
         self.scored = {z: {"state": "scored", "grade": "1/0"} for z in ZONES}
         self.right = np.zeros((100, 100), dtype=bool)

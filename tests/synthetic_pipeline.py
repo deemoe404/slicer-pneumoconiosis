@@ -104,6 +104,11 @@ def restore_and_export(directory):
                          for row in vertices]
     check(exported_vertices == expected_vertices,
           "spatial CSV preserves exact point coordinates and ordered polygon vertices", checks)
+    with paths[3].open(encoding="utf-8-sig", newline="") as stream:
+        images = list(csv.DictReader(stream))
+    check(images == [{"case_id": expected["case_id"], "source_relative_path": "./合成胸片.dcm",
+                      "source_sha256": file_sha256(directory / "input 胸片/合成胸片.dcm")}],
+          "image index links the annotation to its original DICOM and file hash", checks)
 
     references = [reference]
     for annotation in package["records"] + [item["annotation"] for item in package["history"]]:
@@ -121,7 +126,7 @@ def restore_and_export(directory):
         check(np.array_equal(arrays["zones"], labels), "exported six-zone map matches the saved masks and landmarks", checks)
     dicom = pydicom.dcmread(directory / "input 胸片/合成胸片.dcm", stop_before_pixels=True)
     check(str(dicom.SOPInstanceUID) not in text and str(directory.resolve()) not in text,
-          "structured export excludes raw DICOM UID and source path", checks)
+          "JSON excludes raw DICOM UID and source path", checks)
     (directory / "restore-report.json").write_text(json.dumps({"checks": checks, "bundle": str(bundle.relative_to(directory))}, indent=2), encoding="utf-8")
 
 

@@ -230,7 +230,7 @@ def run():
             check(w.selectCase(index), f"native DICOM reader loads sample {index + 1:02d}")
             check(list(w.volume.GetImageData().GetDimensions()) == [w.cases[index]["columns"], w.cases[index]["rows"], 1], f"sample {index + 1:02d} retains original pixel dimensions")
         check(all(file_sha256(c["file_path"]) == hashes[c["case_id"]] for c in w.cases), "all source DICOM files unchanged")
-        csv_path, json_path, spatial_path = w.exportResults(OUT / "exports")
+        csv_path, json_path, spatial_path, images_path = w.exportResults(OUT / "exports")
         rows = list(csv.DictReader(csv_path.read_text(encoding="utf-8-sig").splitlines()))
         package = json.loads(json_path.read_text())
         check(len(rows) == 66 and len(package["records"]) == 11, "CSV and JSON export include all 11 cases and 66 zones")

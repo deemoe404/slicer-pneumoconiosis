@@ -714,7 +714,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         if directory:
             try:
                 paths = self.exportResults(directory)
-                self.setSaveStatus("已导出评分、质量、坐标、录音与分区文件。")
+                self.setSaveStatus("已导出原片对照表、评分、质量、坐标、录音与分区文件。")
                 qt.QDesktopServices.openUrl(qt.QUrl.fromLocalFile(str(Path(paths[0]).parent)))
             except Exception as exc:
                 self.showError("导出失败：" + str(exc))

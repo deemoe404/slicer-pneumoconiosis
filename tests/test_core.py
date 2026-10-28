@@ -17,6 +17,7 @@ class PersistenceTests(unittest.TestCase):
         self.directory = Path(self.temporary.name)
         self.store = AnnotationStore(self.directory)
         self.cases = [{"case_id": f"CXR-{i}", "source_sha256": str(i), "file_path": "/private/source.dcm",
+                       "source_relative_path": f"批次 {i}/胸片.dcm",
                        "rows": 3000, "columns": 2500} for i in range(2)]
         self.store.import_cases(self.cases)
 
@@ -114,6 +115,34 @@ class PersistenceTests(unittest.TestCase):
         self.assertNotIn("note", package["records"][0])
         self.assertNotIn("/private/source", paths[1].read_text())
         self.assertEqual(len(package["history"]), 1)
+
+    def test_image_index_preserves_paths_after_restart_and_uses_only_current_cases(self):
+        self.cases[1]["source_relative_path"] = '=原片, "一".dcm'
+        self.store.import_cases(self.cases)
+        self.store.close()
+        self.store = AnnotationStore(self.directory)
+        paths = self.store.export(self.directory / "exports", ["CXR-1"], "r")
+        self.assertTrue(paths[3].name.endswith("-images.csv"))
+        with paths[3].open(encoding="utf-8-sig", newline="") as stream:
+            images = list(csv.DictReader(stream))
+        self.assertEqual(images, [{"case_id": "CXR-1", "source_relative_path": './=原片, "一".dcm',
+                                   "source_sha256": "1"}])
+        with paths[0].open(encoding="utf-8-sig", newline="") as stream:
+            scores = list(csv.DictReader(stream))
+        self.assertEqual(len(scores), 6)
+        self.assertEqual({row["case_id"] for row in scores}, {row["case_id"] for row in images})
+        package = json.loads(paths[1].read_text(encoding="utf-8"))
+        self.assertEqual(package["records"][0]["zones"], empty_zones())
+        self.assertNotIn("source_relative_path", paths[1].read_text(encoding="utf-8"))
+        self.assertNotIn("/private/source", paths[3].read_text(encoding="utf-8"))
+
+    def test_missing_source_relative_path_stops_export_before_publishing_bundle(self):
+        del self.cases[0]["source_relative_path"]
+        self.store.import_cases(self.cases)
+        destination = self.directory / "exports"
+        with self.assertRaisesRegex(ValueError, "重新打开胸片目录"):
+            self.store.export(destination, ["CXR-0"], "r")
+        self.assertEqual(list(destination.iterdir()), [])
 
     def spatial(self, kind="polygon", points=None):
         return {"id": uuid.uuid4().hex, "kind": kind, "label": "region",

@@ -14,7 +14,7 @@
 - 从外部文件夹加载标准片，与当前胸片并排对照，独立调整显示。
 - 本地语音备注，可录多段、回放和移除。
 - 多读者独立记录、病例切换与自动保存。
-- 导出评分 CSV、空间坐标 CSV、JSON，以及录音和掩膜附件。
+- 导出评分 CSV、原片对照表、空间坐标 CSV、JSON，以及录音和掩膜附件。
 
 ## 适用范围与限制
 
@@ -94,17 +94,18 @@ SLICER_APP="$HOME/Applications/3D Slicer 5.13.0 2026-10-22.app" ./启动尘肺�
 ```text
 pneumoconiosis-reader-01-<时间>/
 ├── <同名>.csv               # 评分，每肺区一行
+├── <同名>-images.csv        # 病例编号 → 原片相对路径，每胸片一行
 ├── <同名>-spatial.csv       # 点 / 多边形顶点
 ├── <同名>.json              # 完整记录与修改历史
 ├── assets/                 # 引用的录音与肺野掩膜，存在时生成
 └── zone-maps/              # 六区标签图，存在时生成
 ```
 
-字段、坐标、标签和读取示例见 [数据格式规范](docs/data-format.md)。
+原片对照表的路径以「打开 DICOM 目录」时选择的文件夹为根，保留子目录；用 `case_id` 关联评分和 JSON。整批原片移动时，只要内部目录结构不变，对照表仍然有效。字段、坐标、标签和读取示例见 [数据格式规范](docs/data-format.md)。
 
 ## 隐私与数据位置
 
-原始 DICOM 只读，导出不打包原片或标准片。标准片从外部目录读取，本地只记住目录及所选文件。源码运行的实际项目位于 `local-data/projects/`，模型位于 `local-data/models/`，功能测试数据位于 `local-data/qa/`；这些目录不纳入 Git。Windows 安装版将记录和录音存入 `%LOCALAPPDATA%/PneumoconiosisAnnotator/`，与程序分离，重装和卸载保留数据。结构化导出不包含源文件路径、患者姓名字段或原始 DICOM UID，但录音保留原声，不自动转写或脱敏。
+原始 DICOM 只读，导出不打包原片或标准片。标准片从外部目录读取，本地只记住目录及所选文件。源码运行的实际项目位于 `local-data/projects/`，模型位于 `local-data/models/`，功能测试数据位于 `local-data/qa/`；这些目录不纳入 Git。Windows 安装版将记录和录音存入 `%LOCALAPPDATA%/PneumoconiosisAnnotator/`，与程序分离，重装和卸载保留数据。导出不包含源文件绝对路径、患者姓名字段或原始 DICOM UID；原片对照表保留原有文件名和相对目录，可能含身份信息，应与原始数据一起保管。录音保留原声，不自动转写或脱敏。
 
 备份时关闭模块，完整保存项目目录及原始 DICOM；只备份 SQLite 文件会遗漏录音和掩膜。具体目录说明见 [本地项目与备份](docs/usage.md#本地项目与备份)。
 
