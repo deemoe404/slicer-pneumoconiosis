@@ -10,7 +10,7 @@ from pydicom.dataset import FileDataset, FileMetaDataset
 from pydicom.uid import DigitalXRayImageStorageForPresentation, ExplicitVRLittleEndian, generate_uid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "PneumoconiosisAnnotator"))
-from PneumoconiosisLib.core import AnnotationStore, file_sha256, scan_cases
+from PneumoconiosisLib.core import AnnotationStore, empty_zones, file_sha256, scan_cases
 
 
 class DirectoryImportTests(unittest.TestCase):
@@ -68,10 +68,11 @@ class DirectoryImportTests(unittest.TestCase):
             store = AnnotationStore(Path(directory) / "project")
             try:
                 store.import_cases(cases)
-                paths = store.export(Path(directory) / "exports", [c["case_id"] for c in cases], "reader-01")
+                store.save(cases[0]["case_id"], "reader-01", empty_zones(), quality={"grade": 1})
+                bundle = store.export(Path(directory) / "exports", [c["case_id"] for c in cases])
             finally:
                 store.close()
-            with paths[3].open(encoding="utf-8-sig", newline="") as stream:
+            with (bundle / "reader-01/reader-01-images.csv").open(encoding="utf-8-sig", newline="") as stream:
                 images = list(csv.DictReader(stream))
             self.assertEqual(len(images), 3)
             self.assertEqual({row["source_relative_path"] for row in images}, {"./" + p for p in relative_paths})

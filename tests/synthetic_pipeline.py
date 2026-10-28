@@ -78,11 +78,13 @@ def restore_and_export(directory):
         check(record == expected, "all saved fields survive a new Python process", checks)
         check(with_store.get(expected["case_id"], "reader-02")["zones"] == empty_zones(),
               "reader records remain independent", checks)
-        paths = with_store.export(directory / "exports", [expected["case_id"]], expected["reader_id"])
+        export_directory = with_store.export(directory / "exports", [expected["case_id"]])
     finally:
         with_store.close()
 
-    bundle = paths[1].parent
+    reader = expected["reader_id"]
+    bundle = export_directory / reader
+    paths = [bundle / (reader + suffix) for suffix in (".csv", ".json", "-spatial.csv", "-images.csv")]
     text = paths[1].read_text(encoding="utf-8")
     package = json.loads(text)
     check(package["schema_version"] == 4 and len(package["records"]) == 1 and len(package["history"]) == 2,

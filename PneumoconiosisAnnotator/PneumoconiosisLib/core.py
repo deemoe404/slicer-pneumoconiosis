@@ -35,6 +35,15 @@ def empty_zones():
     return {zone: {"state": "unread", "grade": None} for zone in ZONES}
 
 
+def has_reading_activity(record):
+    """Ignore navigation/display saves and unreviewed machine-only partitions."""
+    quality = record.get("quality") or {}
+    return (any(zone["state"] in ("scored", "not_scorable") for zone in record["zones"].values())
+            or quality.get("grade") is not None or bool(quality.get("reason", "").strip())
+            or bool(record.get("spatial_annotations")) or bool(record.get("audio"))
+            or (record.get("partition") or {}).get("state") in ("edited", "confirmed"))
+
+
 def validate_reader(reader):
     reader = str(reader).strip()
     if not reader or len(reader) > 64 or not all(c.isalnum() or c in "_-" for c in reader):
@@ -360,37 +369,62 @@ class AnnotationStore:
             recovered += 1
         return recovered
 
-    def export(self, destination, case_ids, reader):
-        """Export one reader's snapshot and a relative-path index of its source images."""
-        reader = validate_reader(reader)
+    def export(self, destination, case_ids):
+        """Export all participating readers from one snapshot into a dated directory."""
         destination = Path(destination).expanduser().resolve()
         destination.mkdir(parents=True, exist_ok=True)
+        case_ids = tuple(dict.fromkeys(case_ids))
+        wanted = set(case_ids)
         with self.connection:
             self.connection.execute("BEGIN")
-            records = [self.get(case_id, reader) for case_id in case_ids]
+            readers = {r[0] for r in self.connection.execute("SELECT reader_id, case_id, payload_json FROM annotations")
+                       if r[1] in wanted and has_reading_activity(json.loads(r[2]))}
+            histories = {}
+            for revision, case_id, reader, at, payload in self.connection.execute(
+                    "SELECT id, case_id, reader_id, created_at, payload_json FROM revisions ORDER BY id"):
+                if case_id not in wanted:
+                    continue
+                annotation = json.loads(payload)
+                histories.setdefault(reader, []).append({"revision": revision, "at": at, "annotation": annotation})
+                if has_reading_activity(annotation):
+                    readers.add(reader)
+            if not readers:
+                raise ValueError("当前病例列表还没有实际阅片记录，暂不能导出。")
             images = []
-            for record in records:
-                metadata = json.loads(self.connection.execute("SELECT metadata_json FROM cases WHERE case_id=?", (record["case_id"],)).fetchone()[0])
-                record["image"] = {k: metadata[k] for k in ("columns", "rows")}
+            dimensions = {}
+            for case_id in case_ids:
+                metadata = json.loads(self.connection.execute("SELECT metadata_json FROM cases WHERE case_id=?", (case_id,)).fetchone()[0])
+                dimensions[case_id] = {k: metadata[k] for k in ("columns", "rows")}
                 if not metadata.get("source_relative_path"):
                     raise ValueError("缺少原片相对路径，请重新打开胸片目录后再导出。")
                 # ./ preserves the exact filename while preventing spreadsheet formulas.
-                images.append({"case_id": record["case_id"],
+                images.append({"case_id": case_id,
                                "source_relative_path": "./" + metadata["source_relative_path"],
                                "source_sha256": metadata["source_sha256"]})
-            # The audit history and current ratings belong to the same read transaction.
-            wanted = set(case_ids)
-            history = [{"revision": r[0], "at": r[2], "annotation": json.loads(r[3])}
-                       for r in self.connection.execute("SELECT id, case_id, created_at, payload_json FROM revisions WHERE reader_id=? ORDER BY id", (reader,)) if r[1] in wanted]
-        package = {"schema_version": 4, "standard": STANDARD, "exported_at": utc_now(), "reader_id": reader,
-                   "coordinate_system": COORDINATES, "grade_codes": GRADE_CODES, "zone_names": ZONE_NAMES,
-                   "quality_grades": QUALITY_GRADES,
-                   "records": records, "history": history}
-        stem = "pneumoconiosis-" + reader + "-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+            packages = []
+            exported_at = utc_now()
+            for reader in sorted(readers):
+                reader = validate_reader(reader)
+                records = [self.get(case_id, reader) for case_id in case_ids]
+                for record in records:
+                    record["image"] = dimensions[record["case_id"]]
+                packages.append({"schema_version": 4, "standard": STANDARD, "exported_at": exported_at, "reader_id": reader,
+                                 "coordinate_system": COORDINATES, "grade_codes": GRADE_CODES, "zone_names": ZONE_NAMES,
+                                 "quality_grades": QUALITY_GRADES, "records": records, "history": histories.get(reader, [])})
+        stem = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         # Rename a complete bundle into place; a failure leaves only a clearly
         # marked hidden partial directory, never a successful-looking export.
         temporary = Path(tempfile.mkdtemp(prefix=".partial-export-", dir=destination))
         final_directory = destination / stem
+        for package in packages:
+            self._write_reader_export(temporary / package["reader_id"], package, images)
+        os.replace(temporary, final_directory)
+        return final_directory
+
+    def _write_reader_export(self, directory, package, images):
+        directory.mkdir()
+        reader = package["reader_id"]
+        records, history = package["records"], package["history"]
         copied = set()
         for record in records + [revision["annotation"] for revision in history]:
             references = list(record.get("audio", []))
@@ -399,7 +433,7 @@ class AnnotationStore:
                 references.extend((partition["baseline"], partition["masks"]))
             for reference in references:
                 if reference["path"] not in copied:
-                    atomic_bytes(temporary / reference["path"], self.assets.read(reference))
+                    atomic_bytes(directory / reference["path"], self.assets.read(reference))
                     copied.add(reference["path"])
         for record in records:
             if record["partition"]:
@@ -411,13 +445,13 @@ class AnnotationStore:
                 np.savez_compressed(stream, zones=labels)
                 data = stream.getvalue()
                 relative = "zone-maps/" + record["case_id"] + ".npz"
-                atomic_bytes(temporary / relative, data)
+                atomic_bytes(directory / relative, data)
                 partition["zone_map"] = {"path": relative, "sha256": hashlib.sha256(data).hexdigest(),
                                          "axes": ["row", "column"], "background": 0, "labels": ZONE_LABELS}
-        json_path = temporary / (stem + ".json")
-        csv_path = temporary / (stem + ".csv")
-        spatial_path = temporary / (stem + "-spatial.csv")
-        images_path = temporary / (stem + "-images.csv")
+        json_path = directory / (reader + ".json")
+        csv_path = directory / (reader + ".csv")
+        spatial_path = directory / (reader + "-spatial.csv")
+        images_path = directory / (reader + "-images.csv")
         buffer = io.StringIO(newline="")
         fields = ["case_id", "reader_id", "status", "standard", "quality_grade", "quality_name", "quality_reason",
                   "zone", "zone_name", "state", "profusion_code", "major_category", "alternative_category",
@@ -458,8 +492,6 @@ class AnnotationStore:
         atomic_write(csv_path, "\ufeff" + buffer.getvalue())
         atomic_write(spatial_path, "\ufeff" + spatial_buffer.getvalue())
         atomic_write(images_path, "\ufeff" + images_buffer.getvalue())
-        os.replace(temporary, final_directory)
-        return tuple(final_directory / p.name for p in (csv_path, json_path, spatial_path, images_path))
 
 
 def csv_safe(value):

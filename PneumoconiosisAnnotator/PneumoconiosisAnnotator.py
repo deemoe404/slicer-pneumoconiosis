@@ -713,16 +713,16 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         directory = qt.QFileDialog.getExistingDirectory(slicer.util.mainWindow(), "选择导出目录", str(self.store.directory))
         if directory:
             try:
-                paths = self.exportResults(directory)
-                self.setSaveStatus("已导出原片对照表、评分、质量、坐标、录音与分区文件。")
-                qt.QDesktopServices.openUrl(qt.QUrl.fromLocalFile(str(Path(paths[0]).parent)))
+                bundle = self.exportResults(directory)
+                self.setSaveStatus("已按读者分别导出所有有阅片记录的结果。")
+                qt.QDesktopServices.openUrl(qt.QUrl.fromLocalFile(str(bundle)))
             except Exception as exc:
                 self.showError("导出失败：" + str(exc))
 
     def exportResults(self, directory):
         if not self.prepareLeave():
             raise RuntimeError("保存失败，已停止导出。")
-        return self.store.export(directory, [c["case_id"] for c in self.cases], self.currentReader)
+        return self.store.export(directory, [c["case_id"] for c in self.cases])
 
     def fitImage(self):
         if self.volume:

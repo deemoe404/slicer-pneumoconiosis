@@ -156,7 +156,8 @@ try:
     check(not w.selectCase(1) and w.currentIndex == 0, "spatial save failure blocks case switch and retains edited geometry")
     w.store.connection.execute("DROP TRIGGER reject_spatial")
     check(w.flushSave(), "spatial save can retry successfully without losing shapes")
-    paths = w.exportResults(OUT / "spatial-exports")
+    bundle = w.exportResults(OUT / "spatial-exports") / w.currentReader
+    paths = [bundle / (w.currentReader + suffix) for suffix in (".csv", ".json", "-spatial.csv", "-images.csv")]
     package = json.loads(paths[1].read_text())
     vertices = list(csv.DictReader(paths[2].read_text(encoding="utf-8-sig").splitlines()))
     check(len(vertices) == 4, "separate coordinate CSV contains point and all three polygon vertices")

@@ -164,7 +164,8 @@ try:
     w.fitImage()
     w.references.fit()
     events(.1)
-    paths = w.exportResults(OUT / "gui-exports")
+    bundle = w.exportResults(OUT / "gui-exports") / w.currentReader
+    paths = [bundle / (w.currentReader + suffix) for suffix in (".csv", ".json", "-spatial.csv", "-images.csv")]
     check(all(path.is_file() for path in paths), "installed GUI exports the CSV and JSON bundle")
     report_path = paths[1]
     record = json.loads(report_path.read_text(encoding="utf-8"))["records"][0]

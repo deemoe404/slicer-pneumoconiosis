@@ -100,7 +100,8 @@ class PersistenceTests(unittest.TestCase):
         zones = {z: {"state": "scored", "grade": GRADES[i]} for i, z in enumerate(ZONES)}
         shape = dict(self.spatial(), label='=HYPERLINK("example")')
         self.store.save("CXR-0", "r", zones, "complete", quality={"grade": 1, "reason": ""}, spatial_annotations=[shape])
-        paths = self.store.export(self.directory / "exports", [c["case_id"] for c in self.cases], "r")
+        bundle = self.store.export(self.directory / "exports", [c["case_id"] for c in self.cases]) / "r"
+        paths = [bundle / name for name in ("r.csv", "r.json", "r-spatial.csv", "r-images.csv")]
         rows = list(csv.DictReader(paths[0].read_text(encoding="utf-8-sig").splitlines()))
         package = json.loads(paths[1].read_text())
         self.assertEqual(len(rows), 12)
@@ -119,9 +120,11 @@ class PersistenceTests(unittest.TestCase):
     def test_image_index_preserves_paths_after_restart_and_uses_only_current_cases(self):
         self.cases[1]["source_relative_path"] = '=原片, "一".dcm'
         self.store.import_cases(self.cases)
+        self.store.save("CXR-1", "r", empty_zones(), quality={"grade": 1})
         self.store.close()
         self.store = AnnotationStore(self.directory)
-        paths = self.store.export(self.directory / "exports", ["CXR-1"], "r")
+        bundle = self.store.export(self.directory / "exports", ["CXR-1"]) / "r"
+        paths = [bundle / name for name in ("r.csv", "r.json", "r-spatial.csv", "r-images.csv")]
         self.assertTrue(paths[3].name.endswith("-images.csv"))
         with paths[3].open(encoding="utf-8-sig", newline="") as stream:
             images = list(csv.DictReader(stream))
@@ -139,9 +142,61 @@ class PersistenceTests(unittest.TestCase):
     def test_missing_source_relative_path_stops_export_before_publishing_bundle(self):
         del self.cases[0]["source_relative_path"]
         self.store.import_cases(self.cases)
+        self.store.save("CXR-0", "r", empty_zones(), quality={"grade": 1})
         destination = self.directory / "exports"
         with self.assertRaisesRegex(ValueError, "重新打开胸片目录"):
-            self.store.export(destination, ["CXR-0"], "r")
+            self.store.export(destination, ["CXR-0"])
+        self.assertEqual(list(destination.iterdir()), [])
+
+    def test_export_groups_active_readers_and_ignores_navigation_and_other_cases(self):
+        self.store.import_cases([dict(self.cases[0], case_id="CXR-outside")])
+        self.store.save("CXR-0", "reader-01", empty_zones(), quality={"grade": 2})
+        zones = empty_zones()
+        zones["RU"] = {"state": "not_scorable", "grade": None}
+        self.store.save("CXR-1", "reader-02", zones)
+        self.store.save("CXR-0", "reader-03", empty_zones(), display={"window": 100, "level": 50})
+        self.store.save("CXR-outside", "reader-04", empty_zones(), quality={"grade": 1})
+        self.store.set_preference("reader", "reader-03")
+        bundle = self.store.export(self.directory / "exports", ["CXR-0", "CXR-1"])
+        self.assertRegex(bundle.name, r"^\d{8}-\d{6}-\d{6}$")
+        self.assertEqual({p.name for p in bundle.iterdir()}, {"reader-01", "reader-02"})
+        for reader in ("reader-01", "reader-02"):
+            folder = bundle / reader
+            self.assertEqual({p.name for p in folder.iterdir()},
+                             {f"{reader}.csv", f"{reader}.json", f"{reader}-spatial.csv", f"{reader}-images.csv"})
+            package = json.loads((folder / f"{reader}.json").read_text(encoding="utf-8"))
+            self.assertEqual(package["reader_id"], reader)
+            self.assertEqual([r["case_id"] for r in package["records"]], ["CXR-0", "CXR-1"])
+            self.assertTrue(all(r["reader_id"] == reader for r in package["records"]))
+            self.assertEqual(len(package["history"]), 1)
+            self.assertEqual(package["history"][0]["annotation"]["reader_id"], reader)
+            with (folder / f"{reader}.csv").open(encoding="utf-8-sig", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual(len(rows), 12)
+            self.assertEqual({row["reader_id"] for row in rows}, {reader})
+            if reader == "reader-01":
+                self.assertEqual(package["records"][0]["quality"]["grade"], 2)
+                self.assertEqual(package["records"][1]["zones"], empty_zones())
+            else:
+                self.assertIsNone(package["records"][0]["quality"]["grade"])
+                self.assertEqual(package["records"][1]["zones"], zones)
+
+    def test_export_retains_reader_whose_actual_annotation_remains_only_in_history(self):
+        self.store.save("CXR-0", "reader-02", empty_zones(), spatial_annotations=[self.spatial()])
+        self.store.save("CXR-0", "reader-02", empty_zones(), spatial_annotations=[])
+        bundle = self.store.export(self.directory / "exports", ["CXR-0"])
+        package = json.loads((bundle / "reader-02/reader-02.json").read_text(encoding="utf-8"))
+        self.assertEqual(package["records"][0]["spatial_annotations"], [])
+        self.assertEqual(len(package["history"]), 2)
+        self.assertEqual(len(package["history"][0]["annotation"]["spatial_annotations"]), 1)
+
+    def test_export_without_actual_reading_does_not_publish_an_empty_bundle(self):
+        destination = self.directory / "exports"
+        with self.assertRaisesRegex(ValueError, "还没有实际阅片记录"):
+            self.store.export(destination, ["CXR-0"])
+        self.store.save("CXR-0", "reader-01", empty_zones(), display={"window": 100, "level": 50})
+        with self.assertRaisesRegex(ValueError, "还没有实际阅片记录"):
+            self.store.export(destination, ["CXR-0"])
         self.assertEqual(list(destination.iterdir()), [])
 
     def spatial(self, kind="polygon", points=None):
@@ -159,7 +214,8 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(annotations[1]["state"], "ready")
         self.assertEqual(self.store.get("CXR-1", "r")["spatial_annotations"], [])
         self.assertEqual(self.store.get("CXR-0", "other")["spatial_annotations"], [])
-        paths = self.store.export(self.directory / "exports", ["CXR-0", "CXR-1"], "r")
+        bundle = self.store.export(self.directory / "exports", ["CXR-0", "CXR-1"]) / "r"
+        paths = [bundle / name for name in ("r.csv", "r.json", "r-spatial.csv", "r-images.csv")]
         vertices = list(csv.DictReader(paths[2].read_text(encoding="utf-8-sig").splitlines()))
         self.assertEqual(len(vertices), 4)
         self.assertEqual(float(vertices[0]["i"]), -0.125)

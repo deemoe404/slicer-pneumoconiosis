@@ -179,7 +179,8 @@ try:
     check(w.closeGuard.eventFilter(window, close) and not close.isAccepted(), "feature save failure blocks normal application close")
     w.store.connection.execute("DROP TRIGGER reject_feature")
     check(w.flushSave(), "retry saves quality and attachments without losing edits")
-    paths = w.exportResults(OUT / "features-exports")
+    bundle = w.exportResults(OUT / "features-exports") / w.currentReader
+    paths = [bundle / (w.currentReader + suffix) for suffix in (".csv", ".json", "-spatial.csv", "-images.csv")]
     package = json.loads(paths[1].read_text())
     rows = list(csv.DictReader(paths[0].read_text(encoding="utf-8-sig").splitlines()))
     check(len(rows) == 66 and len(package["records"]) == 11, "export bundle includes 11 cases, 66 ratings and whole-film quality fields")

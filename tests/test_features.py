@@ -44,8 +44,8 @@ class FeatureTests(unittest.TestCase):
                 "model": {"weights_sha256": "verified-qa-fixture"}, "state": "pending_review", "confirmed_at": None,
                 "source_sha256": "sha0"}
 
-    def clip(self):
-        writer = WaveRecording(self.directory, "CXR-0", "r", 16000)
+    def clip(self, reader="r"):
+        writer = WaveRecording(self.directory, "CXR-0", reader, 16000)
         # Explicit synthetic PCM fixture; this test does not claim microphone capture.
         writer.write(np.arange(3200, dtype="<i2").tobytes())
         return writer.finish()
@@ -157,7 +157,8 @@ class FeatureTests(unittest.TestCase):
     def test_export_bundle_contains_real_wav_masks_zone_map_and_quality(self):
         clip, partition = self.clip(), self.partition()
         record = self.store.save("CXR-0", "r", empty_zones(), quality={"grade": 2, "reason": "轻微旋转"}, partition=partition, audio=[clip])
-        paths = self.store.export(self.directory / "exports", ["CXR-0", "CXR-1"], "r")
+        bundle = self.store.export(self.directory / "exports", ["CXR-0", "CXR-1"]) / "r"
+        paths = [bundle / name for name in ("r.csv", "r.json", "r-spatial.csv", "r-images.csv")]
         package = json.loads(paths[1].read_text())
         exported = package["records"][0]
         self.assertEqual(exported["quality"], record["quality"])
@@ -168,6 +169,35 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(rows[0]["quality_grade"], "2")
         self.assertEqual(rows[0]["audio_count"], "1")
         self.assertEqual(rows[6]["quality_grade"], "")
+
+    def test_export_counts_audio_and_reviewed_partitions_but_not_machine_only_results(self):
+        self.store.save("CXR-0", "reader-01", empty_zones(), partition=self.partition())
+        self.store.save("CXR-0", "reader-02", empty_zones(), partition=dict(self.partition(), state="edited"))
+        confirmed = dict(self.partition(), state="confirmed", confirmed_at="2026-10-28T00:00:00+00:00",
+                         confirmed_by="reader-03")
+        self.store.save("CXR-0", "reader-03", empty_zones(), partition=confirmed)
+        clip = self.clip("reader-04")
+        self.store.save("CXR-0", "reader-04", empty_zones(), audio=[clip])
+        bundle = self.store.export(self.directory / "exports", ["CXR-0"])
+        self.assertEqual({p.name for p in bundle.iterdir()}, {"reader-02", "reader-03", "reader-04"})
+        self.assertEqual((bundle / "reader-04" / clip["path"]).read_bytes(), resolve_asset(self.directory, clip["path"]).read_bytes())
+        for reader in ("reader-02", "reader-03"):
+            folder = bundle / reader
+            package = json.loads((folder / f"{reader}.json").read_text(encoding="utf-8"))
+            reference = package["records"][0]["partition"]["zone_map"]
+            with np.load(folder / reference["path"], allow_pickle=False) as data:
+                np.testing.assert_array_equal(data["zones"], zone_map(self.right, self.left, self.landmarks))
+            self.assertFalse((folder / "assets/audio").exists())
+
+    def test_later_reader_attachment_failure_cannot_publish_partial_multi_reader_export(self):
+        self.store.save("CXR-0", "reader-01", empty_zones(), quality={"grade": 1})
+        clip = self.clip("reader-02")
+        self.store.save("CXR-0", "reader-02", empty_zones(), audio=[clip])
+        resolve_asset(self.directory, clip["path"]).write_bytes(b"corrupt recording")
+        destination = self.directory / "exports"
+        with self.assertRaisesRegex(ValueError, "附件校验失败"):
+            self.store.export(destination, ["CXR-0"])
+        self.assertTrue(all(p.name.startswith(".partial-export-") for p in destination.iterdir()))
 
 
 if __name__ == "__main__":
