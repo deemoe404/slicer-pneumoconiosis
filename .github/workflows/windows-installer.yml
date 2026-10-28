@@ -78,6 +78,7 @@ jobs:
           Load an external DICOM reference folder and compare standards beside the current case with independent viewing controls; reference images are not bundled.
           Installer, offline backend, normal GUI startup, UTF-8 process code page, single-instance protection, Unicode folder picker with Mac ZIP metadata, model/export, reinstall and uninstall checks passed on Windows Server 2022 x64. GUI checks use software rendering; this does not establish Windows 10 client compatibility.
           Reference comparison checks cover OT/CR loading, file navigation, independent window/level and zoom, case/markup isolation, and remembered or missing external folders.
+          Bundles Chinese Slicer, CTK and Qt translations for offline use. Checks cover Chinese native widgets, folder drag-and-drop into the annotation workflow, one-click return from native modules, and UTF-8/GB18030 DICOM text decoding with synthetic metadata.
           Annotation data lives outside the program installation directory and is retained on uninstall.
           The installer is unsigned. Physical GPU, microphone and clinician acceptance remain separate.
           "@

@@ -114,6 +114,8 @@ def main():
     checked([python, "-I", "-B", "-m", "pip", "check"], env=clean_environment(), timeout=60)
 
     copy_tree(ROOT / "PneumoconiosisAnnotator", PAYLOAD / "PneumoconiosisAnnotator")
+    from build_translations import build as build_translations
+    build_translations(PAYLOAD / "Slicer/bin/lrelease.exe", PAYLOAD / "PneumoconiosisAnnotator/Resources/Translations")
     (PAYLOAD / "scripts").mkdir()
     for name in ("feature_worker.py", "start.py"):
         shutil.copy2(ROOT / "scripts" / name, PAYLOAD / "scripts" / name)
@@ -125,6 +127,7 @@ def main():
     shutil.copy2(ROOT / "packaging/windows/slicer_package_check.py", PAYLOAD / "qa/slicer_package_check.py")
     shutil.copy2(ROOT / "packaging/windows/render_check.py", PAYLOAD / "qa/render_check.py")
     shutil.copy2(ROOT / "packaging/windows/reference_check.py", PAYLOAD / "qa/reference_check.py")
+    shutil.copy2(ROOT / "packaging/windows/language_check.py", PAYLOAD / "qa/language_check.py")
     sys.path.insert(0, str(ROOT / "tests"))
     from synthetic_pipeline import create_dicom
     create_dicom(PAYLOAD / "qa/dicom")
@@ -139,6 +142,7 @@ def main():
                                  for d in sorted(importlib.metadata.distributions(), key=lambda d: d.metadata["Name"].lower())]
     notices = "Third-party notices\n\nThe project BSD-3-Clause license covers original code and documentation only.\n"
     notices += "Slicer and its component licenses are retained in Slicer/.\nPython's license is retained in runtime/python/.\n"
+    notices += "Chinese translation sources, upstream URLs/checksums and licenses are retained in PneumoconiosisAnnotator/Resources/Translations/.\n"
     notices += "Python dependency license files are retained in runtime/python/Lib/site-packages, including *.dist-info/licenses.\n"
     notices += "Model source: " + WEIGHTS_URL + "\nModel SHA256: " + WEIGHTS_SHA256 + "\n\n"
     notices += "\n".join(d["name"] + " " + d["version"] + "\n" + d["license"] for d in metadata["dependencies"])

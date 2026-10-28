@@ -56,12 +56,20 @@ class CloseGuard(qt.QWidget):
 
 
 class PictureWheelGuard(qt.QWidget):
-    """In a single-frame radiograph, wheel input zooms instead of leaving the image plane."""
+    """Keep ordinary file drops and image navigation inside the annotation workflow."""
     def __init__(self, widget):
         super().__init__()
         self.widget = widget
 
     def eventFilter(self, obj, event):
+        if (event.type() in (qt.QEvent.DragEnter, qt.QEvent.DragMove, qt.QEvent.Drop)
+                and not self.widget.viewerToolbar.fullInterface and obj.isWidgetType()
+                and obj.window() == slicer.util.mainWindow() and event.mimeData().hasUrls()):
+            event.acceptProposedAction()
+            if event.type() == qt.QEvent.Drop:
+                paths = [url.toLocalFile() for url in event.mimeData().urls()]
+                qt.QTimer.singleShot(0, lambda: self.openDroppedDirectory(paths))
+            return True
         if event.type() != qt.QEvent.Wheel or not self.widget.entered:
             return False
         if not obj.isWidgetType():
@@ -86,6 +94,17 @@ class PictureWheelGuard(qt.QWidget):
         node.UpdateMatrices()
         event.accept()
         return True
+
+    def openDroppedDirectory(self, paths):
+        if len(paths) != 1 or not paths[0] or not Path(paths[0]).is_dir():
+            self.widget.showError("请拖入一个胸片文件夹，或点击「打开目录」选择。")
+            return
+        try:
+            if self.widget.openDirectory(paths[0]):
+                slicer.util.selectModule("PneumoconiosisAnnotator")
+        except Exception as exc:
+            logging.exception("Cannot open the dropped chest-radiograph directory")
+            self.widget.showError("打开失败：" + str(exc))
 
 
 class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):

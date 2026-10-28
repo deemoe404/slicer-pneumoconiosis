@@ -63,7 +63,9 @@ class ViewerToolbar:
         self.referenceButton.connect("clicked(bool)", lambda checked: self.w.references.set_visible(checked))
         row.addStretch(1)
         self.fullButton = self._button(row, "完整 Slicer 界面", "展开原生工具栏、模块选择器和视图控制；可再次点击返回。")
-        self.fullButton.connect("clicked()", lambda: self.setFullInterface(not self.fullInterface))
+        self.fullButton.connect("clicked()", self.toggleInterface)
+        self.moduleSelector = slicer.util.moduleSelector()
+        self.moduleSelector.connect("moduleSelected(QString)", self.updateInterfaceButton)
         self.stack.addWidget(self.frame)
         self.stack.addWidget(self.viewport, 1)
         self.observer = self.interaction.AddObserver(vtk.vtkCommand.ModifiedEvent, self.updateMouseMode)
@@ -123,6 +125,7 @@ class ViewerToolbar:
     def _showNativeControls(self, visible):
         slicer.util.setToolbarsVisible(visible)
         window = slicer.util.mainWindow()
+        window.menuBar().setVisible(visible)
         # These native panels are optional and can be absent during startup.
         for probe in slicer.util.findChildren(window, name="DataProbeCollapsibleWidget"):
             probe.setVisible(visible)
@@ -146,9 +149,18 @@ class ViewerToolbar:
             if self.w.volume is not None:
                 set_background(self.w.volume)
         self._showNativeControls(self.fullInterface)
-        self.fullButton.setText("精简标注界面" if self.fullInterface else "完整 Slicer 界面")
-        self.fullButton.setAccessibleName(self.fullButton.text)
+        self.updateInterfaceButton()
         self.frame.show()
+
+    def updateInterfaceButton(self, *_):
+        returning = self.fullInterface or slicer.util.selectedModule() != "PneumoconiosisAnnotator"
+        self.fullButton.setText("返回标注界面" if returning else "完整 Slicer 界面")
+        self.fullButton.setAccessibleName(self.fullButton.text)
+        self.fullButton.setToolTip("返回病例、质量评价和六肺区评分。" if returning else "展开原生工具栏、模块选择器和视图控制。")
+
+    def toggleInterface(self):
+        returning = self.fullInterface or slicer.util.selectedModule() != "PneumoconiosisAnnotator"
+        self.setFullInterface(not returning)
 
     def setFullInterface(self, full):
         self.fullInterface = bool(full)
@@ -157,6 +169,7 @@ class ViewerToolbar:
         self.applyInterface()
 
     def close(self):
+        self.moduleSelector.disconnect("moduleSelected(QString)", self.updateInterfaceButton)
         self._stopObservingDisplay()
         self.interaction.RemoveObserver(self.observer)
         self._showNativeControls(True)

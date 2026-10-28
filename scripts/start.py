@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import sys
 import traceback
 
 import qt
@@ -18,6 +19,11 @@ def start():
     window.setProperty("PneumoStartupState", "starting")
     data_root = Path(os.environ.get("PNEUMO_DATA_ROOT", ROOT / "local-data"))
     try:
+        module_dir = str(ROOT / "PneumoconiosisAnnotator")
+        if module_dir not in sys.path:
+            sys.path.insert(0, module_dir)
+        from PneumoconiosisLib.language import initialize
+        initialize()
         slicer.util.selectModule("PneumoconiosisAnnotator")
         widget = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
         data_root = widget.dataRoot
@@ -40,6 +46,7 @@ def start():
             if not packaged(ROOT) and sample.exists():
                 widget.openDirectory(sample)
         status = {"initialized": True, "process_id": os.getpid(),
+                  "interface_language": "zh_CN", "selected_module": slicer.util.selectedModule(),
                   "ready": widget.currentIndex >= 0, "case_count": len(widget.cases),
                   "slicer": slicer.app.applicationVersion, "current_reader": widget.currentReader,
                   "spatial_tools_ready": widget.pointButton.isEnabled() and widget.regionButton.isEnabled(),

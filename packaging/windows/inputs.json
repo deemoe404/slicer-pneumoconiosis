@@ -1,5 +1,5 @@
 {
-  "version": "0.2.1",
+  "version": "0.2.2",
   "windows": {
     "minimum_version": "10.0.18362",
     "minimum_release": "Windows 10 1903"

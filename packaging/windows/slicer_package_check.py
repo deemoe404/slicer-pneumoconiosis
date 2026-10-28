@@ -14,6 +14,7 @@ ROOT = Path(os.environ.get("PNEUMO_APPLICATION_ROOT", Path(__file__).resolve().p
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from render_check import capture_rendered_view
 from reference_check import check_reference_view
+from language_check import check_language
 OUT = Path(os.environ["PNEUMO_TEST_OUTPUT"])
 OUT.mkdir(parents=True, exist_ok=True)
 REPORT = {"status": "failed", "checks": [], "synthetic_only": True,
@@ -65,8 +66,9 @@ try:
     status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
     check(status.get("initialized") is True and status.get("process_id") == os.getpid(),
           "normal application startup initializes the external user data directory")
-    slicer.util.selectModule("PneumoconiosisAnnotator")
     w = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
+    check(slicer.util.selectedModule() == "PneumoconiosisAnnotator" and w.headerWidget.isVisible(),
+          "normal startup displays the annotation panel without test-driven module selection")
     from PneumoconiosisLib.runtime import packaged, python_executable
     check(w.dataRoot.resolve() == (OUT / "application-data").resolve(), "GUI uses the isolated test profile")
     if packaged(ROOT):
@@ -133,6 +135,7 @@ try:
     window.resize(1400, 950)
     events(.3)
     w.fitImage()
+    REPORT["chinese_text"] = check_language(w, OUT / "language-check", check, events)
     REPORT["references"] = check_reference_view(w, OUT / "reference-check", check, events)
     w.features.qualityChoices.buttons[2].click()
     for slider in w.gradeSliders.values():

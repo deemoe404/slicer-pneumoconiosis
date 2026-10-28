@@ -1,0 +1,26 @@
+{
+  "Slicer_zh_CN.ts": {
+    "url": "https://raw.githubusercontent.com/Slicer/SlicerLanguageTranslations/cf7c634bf2b1fdd8cd09b414335f102529175c49/translations/Slicer_zh-Hans.ts",
+    "sha256": "489314b34b325fd813d9109439c14dc6b524e66965e088278575dcbfa3397646"
+  },
+  "CTK_zh_CN.ts": {
+    "url": "https://raw.githubusercontent.com/Slicer/SlicerLanguageTranslations/cf7c634bf2b1fdd8cd09b414335f102529175c49/translations/CTK_zh-Hans.ts",
+    "sha256": "c9dd3f660cf5f294f9bc7d9d75dcd3964cccb4c4e1c187bce1415546ae2d1df4"
+  },
+  "LICENSE.SlicerTranslations": {
+    "url": "https://raw.githubusercontent.com/Slicer/SlicerLanguageTranslations/cf7c634bf2b1fdd8cd09b414335f102529175c49/LICENSE",
+    "sha256": "6edead6e0506e9b03f9ea5949132decdf514d8ff555d8dbc45399da3614d1818"
+  },
+  "qtbase_zh_CN.ts": {
+    "url": "https://raw.githubusercontent.com/qt/qttranslations/v6.10.0/translations/qtbase_zh_CN.ts",
+    "sha256": "e63a70eedd900438ec1c63877c525bcda5c8292803bf0e228995de09fb9ddeb7"
+  },
+  "LICENSE.QtTranslations": {
+    "url": "https://raw.githubusercontent.com/qt/qttranslations/v6.10.0/LICENSES/GPL-3.0-only.txt",
+    "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+  },
+  "LICENSE.QtException": {
+    "url": "https://raw.githubusercontent.com/qt/qttranslations/v6.10.0/LICENSES/Qt-GPL-exception-1.0.txt",
+    "sha256": "40678d338ce53cd93f8b22b281a2ecbcaa3ee65ce60b25ffb0c462b0530846b2"
+  }
+}
