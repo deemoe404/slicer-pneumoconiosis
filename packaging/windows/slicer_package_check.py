@@ -122,7 +122,7 @@ try:
           "GUI imports only the real synthetic chest radiograph")
     check(not unexpected_dialogs, "startup and folder selection show no unexpected native error dialogs")
     REPORT.update(slicer=slicer.app.applicationVersion, revision=slicer.app.repositoryRevision,
-                  data_root=str(w.dataRoot), project=str(w.store.directory))
+                  data_root=str(w.dataRoot))
     REPORT["slicer_home"] = str(slicer.app.slicerHome)
     if packaged(ROOT):
         expected_slicer = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["slicer"]
@@ -176,7 +176,9 @@ try:
     if os.environ.get("PNEUMO_EXPECT_SOFTWARE_GL") == "1":
         check("llvmpipe" in REPORT["renderer"].lower(), "GUI check uses the isolated Mesa software renderer")
     check(window.grab().save(str(OUT / "installed-gui.png")), "installed GUI screenshot captured")
-    REPORT["record"] = w.currentRecord
+    # Import checks can switch projects. Bind the final record to the project
+    # that actually owns it for the separate shutdown/reinstall verification.
+    REPORT.update(record=w.currentRecord, project=str(w.store.directory))
     check(not unexpected_dialogs, "the complete GUI session has no unexpected native error dialogs")
     w.cleanup()
     REPORT["status"] = "passed"
