@@ -232,9 +232,15 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         ratings.setToolTip("六肺区小阴影密集度 · GBZ 70—2015")
         self.ratingsWidget = ratings
         ratings_layout = qt.QVBoxLayout(ratings)
-        ratings_layout.setSpacing(3)
+        ratings_layout.setSpacing(4)
+        ratings_layout.setContentsMargins(10, 12, 10, 8)
         self.gradeSliders = {}
         for zone in ZONES:
+            if zone == "LU":
+                divider = qt.QFrame(ratings)
+                divider.setFixedHeight(1)
+                divider.setStyleSheet("background:#e6ebf2; border:none; margin:0 2px;")
+                ratings_layout.addWidget(divider)
             control = GradeSlider(ZONE_NAMES[zone], self.ratingChanged, ratings)
             self.gradeSliders[zone] = control
             ratings_layout.addWidget(control)
@@ -878,7 +884,14 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
                     f"QGroupBox#{name} {{border:1px solid {color}; border-radius:4px; margin-top:1.1em;}}"
                     f"QGroupBox#{name}::title {{subcontrol-origin:margin; left:6px; padding:0 3px; color:{color};}}"
                     if active else "")
+                if key == "ratings":
+                    widget.setStyleSheet(
+                        f"QGroupBox#{name} {{background:#fbfcfe; border:1px solid #c6d0dc; border-radius:4px; margin-top:1.2em;}}"
+                        f"QGroupBox#{name}::title {{subcontrol-origin:margin; left:10px; padding:0 4px; color:#334155; font-weight:600;}}")
             suffix = (" · 待完成" if issue else " · 可选 ✓" if optional else " ✓") if active else ""
+            if key == "ratings" and active:
+                count = sum(zone["state"] != "unread" for zone in zones.values())
+                suffix = f" · 已评 {count}/6" + (" ✓" if count == 6 else "")
             widget.setTitle(title + suffix)
             widget.setToolTip(issue or ("此项可不填写。" if optional else "已满足完成条件。") if active else "请选择胸片目录。")
             widget.setAccessibleDescription(widget.toolTip)

@@ -68,7 +68,7 @@ def run():
         check(w.features.qualityWidget.property("completionState") == "missing"
               and w.ratingsWidget.property("completionState") == "missing"
               and w.completeButton.property("completionState") == "missing",
-              "unread quality, six-zone ratings and completion action start red")
+              "unread quality, six-zone ratings and completion action report missing requirements")
         check(all(group.property("completionState") == "ready" for group in
                   (w.features.partitionWidget, w.spatialGroup, w.features.audioWidget)),
               "empty optional partition, geometry and audio stay green without becoming required")
@@ -146,7 +146,7 @@ def run():
         mouse(control.slider, qt.QEvent.MouseButtonRelease, 0)
         check(w._zonesFromUI()["RU"]["grade"] == "0/-", "clicking the unmoved first slider handle explicitly records the lowest grade")
         check(control.property("completionState") == "ready" and w.gradeSliders["RM"].property("completionState") == "missing",
-              "each lung-zone row turns green independently while unread rows stay red")
+              "each lung-zone row reports completion independently while unread rows remain missing")
         key = qt.QKeyEvent(qt.QEvent.KeyPress, qt.Qt.Key_Right, qt.Qt.NoModifier)
         slicer.app.sendEvent(control.slider, key)
         check(w._zonesFromUI()["RU"]["grade"] == "0/0", "native keyboard arrows select the adjacent small grade")
@@ -264,6 +264,12 @@ def run():
         events(0.2)
         check(window.grab().save(str(OUT / "module-preview.png")), "capture native Slicer module preview")
         check(w.ratingsWidget.grab().save(str(OUT / "slider-preview.png")), "capture the compact six-slider panel")
+        # Representative UI preview stays in this isolated QA project.
+        for zone, grade in zip(ZONES[:4], ("0/1", "1/2", "2/2", "3/+")):
+            rate(w, zone, grade)
+        w.gradeSliders["LL"].notScorableButton.click()
+        events(.1)
+        check(w.ratingsWidget.grab().save(str(OUT / "slider-scored-preview.png")), "capture grouped ratings and explicit unread/non-scorable states")
         REPORT["success"] = True
     except Exception:
         REPORT["success"] = False
