@@ -420,6 +420,7 @@ class AnnotationStore:
                 records = [self.get(case_id, reader) for case_id in case_ids]
                 for record in records:
                     record["image"] = dimensions[record["case_id"]]
+                    record["reading_state"] = record["status"] if has_reading_activity(record) else "unread"
                 packages.append({"schema_version": 6, "standard": STANDARD, "exported_at": exported_at, "reader_id": reader,
                                  "coordinate_system": COORDINATES, "grade_codes": GRADE_CODES, "zone_names": ZONE_NAMES,
                                  "quality_grades": QUALITY_GRADES, "records": records, "history": histories.get(reader, [])})
@@ -427,6 +428,7 @@ class AnnotationStore:
 
     def export(self, destination, case_ids):
         """Export all participating readers from one snapshot into a dated directory."""
+        from .delivery import write_delivery_index
         destination = Path(destination).expanduser().resolve()
         destination.mkdir(parents=True, exist_ok=True)
         snapshot = self.export_snapshot(case_ids)
@@ -437,6 +439,7 @@ class AnnotationStore:
         final_directory = destination / stem
         for package in snapshot["packages"]:
             self._write_reader_export(temporary / package["reader_id"], package, snapshot["images"])
+        write_delivery_index(temporary, snapshot)
         os.replace(temporary, final_directory)
         return final_directory
 

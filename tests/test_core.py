@@ -159,7 +159,16 @@ class PersistenceTests(unittest.TestCase):
         self.store.set_preference("reader", "reader-03")
         bundle = self.store.export(self.directory / "exports", ["CXR-0", "CXR-1"])
         self.assertRegex(bundle.name, r"^\d{8}-\d{6}-\d{6}$")
-        self.assertEqual({p.name for p in bundle.iterdir()}, {"reader-01", "reader-02"})
+        self.assertEqual({p.name for p in bundle.iterdir()}, {"reader-01", "reader-02", "manifest.json", "交付说明.txt"})
+        from PneumoconiosisLib.core import file_sha256
+        manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+        self.assertFalse(manifest["includes_source_images"])
+        self.assertEqual(manifest["case_count"], 2)
+        self.assertEqual(manifest["readers"][0]["status_counts"], {"complete": 0, "draft": 1, "unread": 1})
+        self.assertEqual({item["path"] for item in manifest["files"]},
+                         {p.relative_to(bundle).as_posix() for p in bundle.rglob("*") if p.is_file() and p.name != "manifest.json"})
+        for item in manifest["files"]:
+            self.assertEqual(item["sha256"], file_sha256(bundle / item["path"]))
         for reader in ("reader-01", "reader-02"):
             folder = bundle / reader
             self.assertEqual({p.name for p in folder.iterdir()},

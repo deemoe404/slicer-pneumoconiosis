@@ -158,9 +158,11 @@ class CaseFeatures:
     def close(self):
         self.prepare_leave()
         self.partition.clear()
+        self.jobs.clear()
         for worker in (self.model_worker, self.audio_worker, self.player):
             if worker:
                 worker.close()
+        self.model_worker = self.audio_worker = self.player = None
         self.audioTimer.stop()
 
     def segment(self):

@@ -4,6 +4,7 @@ import json
 import sys
 import time
 import traceback
+import uuid
 from pathlib import Path
 
 import qt
@@ -51,9 +52,8 @@ def run():
         slicer.util.selectModule("PneumoconiosisAnnotator")
         REPORT["module_loaded"] = bool(slicer.app.moduleManager().module("PneumoconiosisAnnotator"))
         w = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
-        qa_store = OUT / "integration-store"
-        for suffix in ("", "-wal", "-shm"):
-            (qa_store / ("annotations.sqlite3" + suffix)).unlink(missing_ok=True)
+        qa_store = OUT / "integration-store" / uuid.uuid4().hex
+        REPORT["project_directory"] = str(qa_store)
         w.dataRoot = OUT / "settings"
         check(all(not control.slider.isEnabled() for control in w.gradeSliders.values()),
               "rating sliders stay disabled until a case is loaded")
@@ -213,7 +213,7 @@ def run():
         w.store.connection.execute("DROP TRIGGER reject_save")
         check(w.flushSave(), "retry recovers buffered input after storage failure")
         check(w.currentRecord["quality"]["grade"] == 2, "storage retry preserves the quality selection made before the failure")
-        check(not w.saveLabel.isVisible() and not w.retryButton.isVisible(), "successful saves leave no persistent status row")
+        check(w.saveLabel.isVisible() and "已自动保存" in w.saveLabel.text and not w.retryButton.isVisible(), "successful saves keep the saved status visible and hide retry")
         check(w.completeButton.property("completionState") == "ready", "a successful storage retry restores green completion")
         # Non-scorable is a valid result without mandatory text or audio.
         w.selectCase(2)

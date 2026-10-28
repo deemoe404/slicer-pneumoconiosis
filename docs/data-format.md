@@ -1,6 +1,6 @@
 # 数据格式规范
 
-本规范对应 JSON 导出版本 **4**。操作方法见 [使用手册](usage.md)，实现入口是 [core.py](../PneumoconiosisAnnotator/PneumoconiosisLib/core.py)。
+本规范对应 JSON 导出版本 **6**。操作方法见 [使用手册](usage.md)，实现入口是 [core.py](../PneumoconiosisAnnotator/PneumoconiosisLib/core.py)。
 
 ## 记录单位与版本
 
@@ -39,7 +39,7 @@
 | 字段 | 含义 |
 | --- | --- |
 | `case_id` | 与评分 CSV、空间 CSV 和 JSON 对应的图像编号 |
-| `source_relative_path` | 相对于「打开 DICOM 目录」所选目录的路径，保留子目录和原文件名 |
+| `source_relative_path` | 相对于「选择胸片文件夹」所选目录的路径，保留子目录和原文件名 |
 | `source_sha256` | 导入时原始 DICOM 文件的 SHA256，用于核对是否为同一份文件 |
 
 例如 `CXR-…` 对应 `./批次 A/胸片.dcm`，就到所选原片目录下的 `批次 A` 文件夹找 `胸片.dcm`。路径统一使用 `/`，以 `./` 开头，避免文件名被表格软件识别为公式，同时保持程序可直接拼接读取。相同文件名在不同子目录中不会混淆；整批原片移动但内部结构不变时，对照表仍然有效。扫描时已合并的相同图像副本只列出当前病例实际引用的文件。
@@ -47,6 +47,8 @@
 对照表只包含当前病例列表，每病例一行，不随六区或修改历史重复，也不包含标准片。`source_sha256` 来自导入记录，导出时不重新读取原片；需要验证当前文件内容时，应重新计算其 SHA256 并比较。原片绝对目录和原始 DICOM UID 不导出。对照表保留原文件名和目录名，应与原始数据一起保管；JSON 中不加入这些路径。
 
 ## JSON 顶层
+
+交付包根目录另有 `交付说明.txt` 和 `manifest.json`。清单的 `format` 为 `pneumoconiosis-research-delivery`，`version` 为 `1`；`includes_source_images=false` 表示胸片另行交付。`readers[].status_counts` 对应当前记录的 `reading_state`，分 `complete`、`draft`、`unread`。`files` 列出包内文件的相对路径、大小与 SHA-256（不包含清单自身），不暴露本机绝对路径。
 
 | 字段 | 含义 |
 | --- | --- |
@@ -70,6 +72,7 @@
 | `schema_version`, `standard` | 该载荷版本和参考规范 |
 | `case_id`, `reader_id` | 图像与读者联合标识 |
 | `status` | `draft` 或 `complete` |
+| `reading_state` | 当前导出记录的阅片状态：`complete`、`draft`、`unread`；当前无人工阅片内容为 `unread`，不把浏览或机器分区当作已评。此字段不添加到历史修订 |
 | `image` | 原图 `columns`、`rows`（像素）及 `measurement_scale` 尺度信息 |
 | `zones` | 六区评价，见下表 |
 | `quality` | 整片质量对象 |

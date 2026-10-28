@@ -179,7 +179,7 @@ class FeatureTests(unittest.TestCase):
         clip = self.clip("reader-04")
         self.store.save("CXR-0", "reader-04", empty_zones(), audio=[clip])
         bundle = self.store.export(self.directory / "exports", ["CXR-0"])
-        self.assertEqual({p.name for p in bundle.iterdir()}, {"reader-02", "reader-03", "reader-04"})
+        self.assertEqual({p.name for p in bundle.iterdir()}, {"reader-02", "reader-03", "reader-04", "manifest.json", "交付说明.txt"})
         self.assertEqual((bundle / "reader-04" / clip["path"]).read_bytes(), resolve_asset(self.directory, clip["path"]).read_bytes())
         for reader in ("reader-02", "reader-03"):
             folder = bundle / reader

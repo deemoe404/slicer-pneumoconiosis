@@ -1,8 +1,6 @@
 """Simple single-frame chest-radiograph reader for independent six-zone research ratings."""
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import math
 import sys
@@ -18,7 +16,7 @@ READER_IDS = tuple(f"reader-{number:02d}" for number in range(1, 11))
 if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 from PneumoconiosisLib.core import (
-    AnnotationStore, GRADES, ZONES, ZONE_NAMES, atomic_write, completion_issues, file_sha256, shape_issue, scan_cases,
+    AnnotationStore, GRADES, ZONES, ZONE_NAMES, completion_issues, file_sha256, shape_issue, scan_cases,
     validate_complete, validate_reader, validate_spatial,
 )
 from PneumoconiosisLib.markups import ImageMarkups
@@ -33,6 +31,7 @@ from PneumoconiosisLib.runtime import data_directory
 from PneumoconiosisLib.labelme_export_view import LabelmeExport
 from PneumoconiosisLib.busy import BusyOverlay, blocking
 from PneumoconiosisLib.geometry import measure, measurement_text
+from PneumoconiosisLib.project import validate_project
 
 
 class PneumoconiosisAnnotator(ScriptedLoadableModule):
@@ -52,7 +51,18 @@ class CloseGuard(qt.QWidget):
         self.widget = widget
 
     def eventFilter(self, obj, event):
-        if event.type() == qt.QEvent.Close and not self.widget.prepareLeave():
+        if event.type() != qt.QEvent.Close:
+            return False
+        if self.widget.busy.nesting:
+            event.ignore()
+            return True
+        if obj.property("PneumoProjectWorkflow"):
+            # This launcher owns an annotation project, not a Slicer scene file.
+            # Quit through the application only after its own persistence guard.
+            event.ignore()
+            qt.QTimer.singleShot(0, self.widget.finishExit)
+            return True
+        if not self.widget.prepareLeave():
             event.ignore()
             return True
         return False
@@ -100,7 +110,7 @@ class PictureWheelGuard(qt.QWidget):
 
     def openDroppedDirectory(self, paths):
         if len(paths) != 1 or not paths[0] or not Path(paths[0]).is_dir():
-            self.widget.showError("请拖入一个胸片文件夹，或点击「打开目录」选择。")
+            self.widget.showError("请拖入一个胸片文件夹，或点击「选择胸片文件夹」。")
             return
         try:
             if self.widget.openDirectory(paths[0]):
@@ -115,6 +125,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         super().setup()
         self.store = None
         self.projectLock = None
+        self.sourceDirectory = None
         self.cases = []
         self.currentIndex = -1
         self.currentReader = "reader-01"
@@ -138,6 +149,32 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         header = qt.QVBoxLayout(self.headerWidget)
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(4)
+        self.sourceLabel = qt.QLabel("胸片：尚未选择")
+        self.projectLabel = qt.QLabel("标注项目：尚未打开")
+        for label in (self.sourceLabel, self.projectLabel):
+            label.setWordWrap(True)
+            label.setTextFormat(qt.Qt.PlainText)
+            label.setTextInteractionFlags(qt.Qt.TextSelectableByMouse)
+            label.setSizePolicy(qt.QSizePolicy.Ignored, qt.QSizePolicy.Preferred)
+            header.addWidget(label)
+        project_row = qt.QHBoxLayout()
+        self.openButton = qt.QPushButton("选择胸片文件夹")
+        self.openButton.connect("clicked()", self.chooseDirectory)
+        self.newProjectButton = qt.QPushButton("新建项目")
+        self.newProjectButton.connect("clicked()", lambda: self.chooseProject(create=True))
+        self.openProjectButton = qt.QPushButton("打开项目")
+        self.openProjectButton.connect("clicked()", lambda: self.chooseProject(create=False))
+        for button in (self.openButton, self.newProjectButton, self.openProjectButton):
+            project_row.addWidget(button)
+        header.addLayout(project_row)
+        self.saveLabel = qt.QLabel("先选择胸片文件夹，再新建或打开标注项目。")
+        self.saveLabel.setTextFormat(qt.Qt.PlainText)
+        self.saveLabel.setWordWrap(True)
+        header.addWidget(self.saveLabel)
+        self.retryButton = qt.QPushButton("重试保存")
+        self.retryButton.connect("clicked()", self.flushSave)
+        self.retryButton.hide()
+        header.addWidget(self.retryButton)
         case_row = qt.QHBoxLayout()
         case_row.setSpacing(4)
         self.caseCombo = qt.QComboBox()
@@ -177,11 +214,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.readerCombo.setToolTip("每位读者选择自己的编号，评分与标注分别保存。")
         self.readerCombo.connect("currentIndexChanged(int)", self.changeReader)
         progress_row.addWidget(self.readerCombo)
-        self.openButton = qt.QPushButton("打开目录")
-        self.openButton.setToolTip("选择包含胸片的 DICOM 目录")
-        self.openButton.connect("clicked()", self.chooseDirectory)
-        progress_row.addWidget(self.openButton)
-        self.exportButton = qt.QPushButton("导出结果")
+        self.exportButton = qt.QPushButton("导出交付包")
+        self.exportButton.setToolTip("供医院交给研究者：所有参与读者的标注、附件和原片对照表；胸片另行交付。")
         self.exportButton.connect("clicked()", self.chooseExport)
         progress_row.addWidget(self.exportButton)
         self.labelmeExport = LabelmeExport(self, ROOT)
@@ -246,14 +280,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.layout.addWidget(spatial)
         self.markups = ImageMarkups(self.spatialChanged, self.updateSpatialControls)
 
-        self.saveLabel = qt.QLabel()
-        self.saveLabel.setWordWrap(True)
-        self.saveLabel.hide()
-        self.layout.addWidget(self.saveLabel)
-        self.retryButton = qt.QPushButton("重试保存")
-        self.retryButton.connect("clicked()", self.flushSave)
-        self.retryButton.hide()
-        self.layout.addWidget(self.retryButton)
         self.viewerToolbar = ViewerToolbar(self)
         self.references = ReferenceView(self, self.viewerToolbar)
 
@@ -267,7 +293,6 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def enter(self):
         self.entered = True
-        self.references.restore_once()
         self.viewerToolbar.applyInterface()
         probe = getattr(slicer.modules, "DataProbeInstance", None)
         if probe is not None and probe.infoWidget is not None:
@@ -281,10 +306,14 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.prepareLeave()
         self.entered = False
 
-    def cleanup(self):
+    def cleanup(self, saved=False):
+        if getattr(self, "cleanedUp", False):
+            return
+        self.cleanedUp = True
         self.saveTimer.stop()
         self.labelmeExport.close()
-        self.prepareLeave()
+        if not saved:
+            self.prepareLeave()
         self.references.close()
         self.viewerToolbar.close()
         self.features.close()
@@ -302,6 +331,11 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             self.projectLock.unlock()
             self.projectLock = None
 
+    def finishExit(self):
+        if self.prepareLeave():
+            self.cleanup(saved=True)
+            slicer.app.exit(0)
+
     def onSceneClose(self, *_):
         saved = self.prepareLeave()
         self.references.clear()
@@ -315,14 +349,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def chooseDirectory(self):
         initial = qt.QStandardPaths.writableLocation(qt.QStandardPaths.DocumentsLocation)
-        last_path = self.dataRoot / "last-project.json"
-        if last_path.is_file():
-            try:
-                source = Path(json.loads(last_path.read_text(encoding="utf-8"))["source"])
-                if source.is_dir():
-                    initial = str(source)
-            except (OSError, ValueError, KeyError, TypeError):
-                logging.warning("Cannot restore the previous directory picker location", exc_info=True)
+        if self.sourceDirectory:
+            initial = str(self.sourceDirectory)
         # Own this directory-only dialog instead of delegating folder opening to
         # the operating system or Slicer's generic Add Data dialog.
         dialog = qt.QFileDialog(slicer.util.mainWindow())
@@ -341,42 +369,97 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
                 self.showError("打开失败：" + str(exc))
         dialog.deleteLater()
 
+    def chooseProject(self, create=False):
+        if self.sourceDirectory is None:
+            return
+        dialog = qt.QFileDialog(slicer.util.mainWindow())
+        dialog.setObjectName("PneumoNewProjectDialog" if create else "PneumoOpenProjectDialog")
+        dialog.setOption(qt.QFileDialog.DontUseNativeDialog, True)
+        dialog.setOption(qt.QFileDialog.ShowDirsOnly, True)
+        dialog.setOption(qt.QFileDialog.ReadOnly, not create)
+        dialog.setFileMode(qt.QFileDialog.Directory)
+        dialog.setWindowTitle("新建标注项目：选择或新建一个空文件夹" if create else "打开标注项目文件夹")
+        dialog.setDirectory(str(self.store.directory.parent if self.store else self.sourceDirectory.parent))
+        try:
+            if dialog.exec() and dialog.selectedFiles():
+                self.openDirectory(self.sourceDirectory, dialog.selectedFiles()[0], create=create)
+        except Exception as exc:
+            logging.exception("Cannot open annotation project")
+            self.showError("项目未打开：" + str(exc))
+        finally:
+            dialog.deleteLater()
+
+    def clearProject(self, clearReferences=False):
+        """Detach only after prepareLeave succeeds, keeping every project on disk."""
+        self.saveTimer.stop()
+        self.features.close()
+        self.features.clear()
+        self.markups.clear()
+        if clearReferences:
+            self.references.clear()
+            self.references.restored = False
+        remove_volume(self.volume)
+        self.volume = None
+        if self.store:
+            self.store.close()
+        if self.projectLock:
+            self.projectLock.unlock()
+        self.store, self.projectLock = None, None
+        self.currentIndex, self.currentRecord = -1, None
+        self.spatialState = []
+        self.dirty, self.saveError = False, None
+        self.updating = True
+        self.caseCombo.clear()
+        for control in self.gradeSliders.values():
+            control.set_value("unread")
+        self.features.qualityChoices.set_value(None)
+        self.updating = False
+
     @blocking("正在打开胸片目录…")
-    def openDirectory(self, source, projectDirectory=None, reader=None):
+    def openDirectory(self, source, projectDirectory=None, reader=None, *, create=None):
         if not self.prepareLeave():
             return False
         source = Path(source).resolve()
         cases, skipped = scan_cases(source)
         if projectDirectory is None:
-            key = hashlib.sha256(str(source).encode()).hexdigest()[:16]
-            projectDirectory = self.dataRoot / "projects" / key
-        projectDirectory = Path(projectDirectory).resolve()
+            self.clearProject(clearReferences=True)
+            self.sourceDirectory, self.cases = source, cases
+            self.setSaveStatus(f"已找到 {len(cases)} 张胸片。请新建或打开标注项目。")
+            self.updateControls()
+            return True
+        # Explicit programmatic callers may create a new project; the two UI
+        # actions always specify create so opening cannot silently initialize one.
+        if create is None:
+            create = not (Path(projectDirectory) / "annotations.sqlite3").exists()
+        projectDirectory = validate_project(projectDirectory, cases, create=create)
         projectDirectory.mkdir(parents=True, exist_ok=True)
         same_project = self.store is not None and self.store.directory == projectDirectory
         project_lock = self.projectLock if same_project else qt.QLockFile(str(projectDirectory / "reader.lock"))
         project_lock.setStaleLockTime(0)
         if not same_project and not project_lock.tryLock(100):
             raise ValueError("这个标注项目正由另一个窗口使用，请先关闭那个窗口。")
-        new_store = AnnotationStore(projectDirectory)
+        new_store = None
         try:
+            new_store = AnnotationStore(projectDirectory)
             new_store.import_cases(cases)
             recovered = new_store.recover_audio()
             new_reader = validate_reader(reader or new_store.preference("reader", "reader-01"))
             if new_reader not in READER_IDS:
                 raise ValueError("读者请选择 01–10。")
+            last_id = new_store.preference("last_case:" + new_reader)
+            index = next((i for i, case in enumerate(cases) if case["case_id"] == last_id), 0)
+            new_store.get(cases[index]["case_id"], new_reader)
         except Exception:
-            new_store.close()
+            if new_store:
+                new_store.close()
             if not same_project:
                 project_lock.unlock()
             raise
-        if self.store:
-            self.store.close()
-        if self.projectLock and not same_project:
-            self.projectLock.unlock()
+        if same_project:
+            self.projectLock = None  # Reuse this window's lock through the transition.
+        self.clearProject()
         self.projectLock = project_lock
-        self.features.clear()
-        self.markups.clear()
-        self.spatialState = []
+        self.sourceDirectory = source
         self.store, self.cases = new_store, cases
         self.currentReader = new_reader
         self.currentIndex, self.currentRecord = -1, None
@@ -384,18 +467,16 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.updating = True
         self.readerCombo.setCurrentIndex(self.readerCombo.findData(new_reader))
         self.caseCombo.clear()
-        for index, case in enumerate(cases):
-            self.caseCombo.addItem(f"病例 {index + 1:03d} · {case['case_id'][-6:]}")
+        for case_index, case in enumerate(cases):
+            self.caseCombo.addItem(f"病例 {case_index + 1:03d} · {case['case_id'][-6:]}")
         self.updating = False
-        last_id = new_store.preference("last_case:" + new_reader)
-        index = next((i for i, case in enumerate(cases) if case["case_id"] == last_id), 0)
         opened = self.selectCase(index)
+        self.updateControls()
         self.progressLabel.setToolTip(f"扫描时跳过 {skipped} 个非目标或重复文件。" if skipped else "")
         if opened:
-            self.dataRoot.mkdir(parents=True, exist_ok=True)
-            atomic_write(self.dataRoot / "last-project.json", json.dumps({"source": str(source), "project": str(new_store.directory)}, ensure_ascii=False))
+            self.references.restore_once()
             if recovered:
-                self.setSaveStatus(f"已恢复 {recovered} 段未关联的本地录音。")
+                self.setSaveStatus(f"已保存 · 已恢复 {recovered} 段本地录音。")
         return opened
 
     def _loadVolume(self, case):
@@ -506,7 +587,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.caseCombo.setCurrentIndex(self.currentIndex)
         self.updating = False
         self.dirty = False
-        self.setSaveStatus("已完成 · 已保存" if self.currentRecord["status"] == "complete" else ("草稿已恢复" if self.currentRecord["updated_at"] else "未评 · 修改后自动保存"))
+        self.setSaveStatus("已完成 · 已保存" if self.currentRecord["status"] == "complete" else ("草稿 · 已保存" if self.currentRecord["updated_at"] else "未评 · 修改后自动保存"))
 
     def _zonesFromUI(self):
         values = {}
@@ -738,16 +819,16 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
     def chooseExport(self):
         if self.store is None or not self.prepareLeave():
             return
-        directory = qt.QFileDialog.getExistingDirectory(slicer.util.mainWindow(), "选择导出目录", str(self.store.directory))
+        directory = qt.QFileDialog.getExistingDirectory(slicer.util.mainWindow(), "选择交付包的导出位置（胸片另行交付）", str(self.store.directory.parent))
         if directory:
             try:
                 bundle = self.exportResults(directory)
-                self.setSaveStatus("已按读者分别导出所有有阅片记录的结果。")
+                self.setSaveStatus("项目已保存 · 交付包已导出。胸片请另行交付。")
                 qt.QDesktopServices.openUrl(qt.QUrl.fromLocalFile(str(bundle)))
             except Exception as exc:
                 self.showError("导出失败：" + str(exc))
 
-    @blocking("正在导出研究结果…")
+    @blocking("正在生成交付包…")
     def exportResults(self, directory):
         if not self.prepareLeave():
             raise RuntimeError("保存失败，已停止导出。")
@@ -770,8 +851,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         elif not self.dirty:
             self.saveError = None
         self.saveLabel.setText(self.saveError or text)
-        self.saveLabel.setStyleSheet("color:#e57373; margin:6px 0;")
-        self.saveLabel.setVisible(bool(self.saveError))
+        self.saveLabel.setStyleSheet("color:#b43e3e;" if self.saveError else "color:#207544;")
+        self.saveLabel.show()
         self.retryButton.setVisible(bool(self.saveError))
         self.updateCompletionControls()
 
@@ -832,6 +913,12 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def updateControls(self):
         active = self.currentIndex >= 0 and self.volume is not None
+        self.sourceLabel.setText("胸片：" + (str(self.sourceDirectory) if self.sourceDirectory else "尚未选择"))
+        self.projectLabel.setText("标注项目：" + (str(self.store.directory) if self.store else "尚未打开"))
+        self.sourceLabel.setToolTip(self.sourceLabel.text)
+        self.projectLabel.setToolTip(self.projectLabel.text)
+        self.newProjectButton.setEnabled(self.sourceDirectory is not None)
+        self.openProjectButton.setEnabled(self.sourceDirectory is not None)
         self.labelmeExport.update_controls()
         for control in [self.exportButton, self.caseCombo, self.readerCombo, self.completeButton, self.ratingsWidget]:
             control.setEnabled(active)
@@ -841,6 +928,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.updateSpatialControls()
         self.features.update_controls()
         if not active:
+            self.caseCombo.setEnabled(self.store is not None)
+            self.progressLabel.setText("请选择胸片" if self.sourceDirectory is None else f"共 {len(self.cases)} 张")
             return
         statuses = self.store.completion([c["case_id"] for c in self.cases], self.currentReader)
         count = sum(value == "complete" for value in statuses.values())

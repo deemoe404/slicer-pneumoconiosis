@@ -24,6 +24,7 @@ def check_language(w, output, check, events):
     dialog.deleteLater()
 
     source = Path(w.cases[w.currentIndex]["file_path"])
+    original_project = w.store.directory
     dropped = output / "拖入 胸片"
     dropped.mkdir(exist_ok=True)
     shutil.copy2(source, dropped / "合成胸片.dcm")
@@ -35,12 +36,11 @@ def check_language(w, output, check, events):
     drop = qt.QDropEvent(qt.QPointF(200, 200), qt.Qt.CopyAction, mime, qt.Qt.LeftButton, qt.Qt.NoModifier)
     slicer.app.sendEvent(window, drop)
     events(.5)
-    remembered = json.loads((w.dataRoot / "last-project.json").read_text(encoding="utf-8"))
     check(enter.isAccepted() and drop.isAccepted() and w.headerWidget.isVisible()
-          and slicer.util.selectedModule() == "PneumoconiosisAnnotator" and w.currentRecord is not None
-          and Path(remembered["source"]).resolve() == dropped.resolve()
-          and Path(w.cases[w.currentIndex]["file_path"]).parent.resolve() == dropped.resolve(),
-          "dropping a chest folder opens the annotation workflow without the native DICOM browser")
+          and slicer.util.selectedModule() == "PneumoconiosisAnnotator" and w.currentRecord is None
+          and w.sourceDirectory == dropped.resolve() and w.store is None,
+          "dropping a chest folder selects its source and waits for an explicit project")
+    check(w.openDirectory(dropped, original_project, create=False), "the matching project reopens after a folder drop")
     check(not window.menuBar().isVisible(), "the doctor interface hides the general-purpose Slicer menus")
 
     # Selecting a native module reproduces the missing annotation panel without

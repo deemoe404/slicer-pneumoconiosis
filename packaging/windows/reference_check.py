@@ -16,7 +16,7 @@ def check_reference_view(w, output, check, events):
     output = Path(output)
     library = output / "标准片 Reference Folder"
     library.mkdir(parents=True)
-    original_source = Path(json.loads((w.dataRoot / "last-project.json").read_text(encoding="utf-8"))["source"])
+    original_source = w.sourceDirectory
     original_project, original_index, original_reader = w.store.directory, w.currentIndex, w.currentReader
     original_case = w.currentRecord["case_id"]
     from PneumoconiosisLib.core import file_sha256
@@ -134,7 +134,7 @@ def check_reference_view(w, output, check, events):
     another = pydicom.dcmread(original)
     another.SOPInstanceUID = another.file_meta.MediaStorageSOPInstanceUID = generate_uid()
     another.save_as(cases / "case-b.dcm", enforce_file_format=True)
-    check(w.openDirectory(cases) and len(w.cases) == 2 and w.selectCase(1), "two isolated synthetic cases can be selected during comparison")
+    check(w.openDirectory(cases, output / "two-case-project") and len(w.cases) == 2 and w.selectCase(1), "two isolated synthetic cases can be selected during comparison")
     check(ref.volume.GetID() == volume_id and right.mrmlSliceCompositeNode().GetBackgroundVolumeID() == volume_id,
           "loading and switching DICOM cases does not replace the displayed standard")
 

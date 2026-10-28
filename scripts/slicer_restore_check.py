@@ -13,7 +13,9 @@ try:
     slicer.util.selectModule("PneumoconiosisAnnotator")
     w = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
     w.dataRoot = OUT / "settings"
-    assert w.openDirectory(ROOT.parent / "2023Sample", OUT / "integration-store", "reader-01")
+    previous = json.loads((OUT / "smoke-result.json").read_text())
+    assert previous["success"]
+    assert w.openDirectory(ROOT.parent / "2023Sample", previous["project_directory"], "reader-01", create=False)
     assert w.selectCase(0)
     first = {z: v["grade"] for z, v in w._zonesFromUI().items()}
     zone_order = ("RU", "RM", "RL", "LU", "LM", "LL")

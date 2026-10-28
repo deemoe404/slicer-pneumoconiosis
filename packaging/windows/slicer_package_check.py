@@ -25,7 +25,9 @@ unexpected_dialogs = []
 
 def dismiss_unexpected_dialogs():
     dialog = qt.QApplication.activeModalWidget()
-    if dialog is not None and dialog.objectName not in ("PneumoCaseDirectoryDialog", "PneumoReferenceDirectoryDialog"):
+    if dialog is not None and dialog.objectName not in (
+            "PneumoCaseDirectoryDialog", "PneumoReferenceDirectoryDialog", "PneumoNewProjectDialog",
+            "PneumoOpenProjectDialog", "PneumoBusyOverlay"):
         unexpected_dialogs.append(str(dialog.windowTitle))
         dialog.close()
 
@@ -95,6 +97,9 @@ try:
             probe.infoWidget = info
 
     source = Path(os.environ["PNEUMO_TEST_DICOM_DIRECTORY"])
+    check(w.sourceDirectory is None and w.store is None and w.volume is None, "launcher starts empty")
+    project = OUT / "annotation-project"
+    project.mkdir()
     picker_visits = []
     def select_folder():
         for dialog in slicer.util.findChildren(slicer.util.mainWindow(), name="PneumoCaseDirectoryDialog"):
@@ -104,15 +109,21 @@ try:
                 # can leave Windows in the parent directory without selecting it.
                 dialog.setDirectory(str(source))
                 dialog.accept()
+        for dialog in slicer.util.findChildren(slicer.util.mainWindow(), name="PneumoNewProjectDialog"):
+            if dialog.isVisible():
+                picker_visits.append(str(dialog.windowTitle))
+                dialog.setDirectory(str(project))
+                dialog.accept()
     selector = qt.QTimer()
     selector.connect("timeout()", select_folder)
     selector.start(50)
     try:
         w.openButton.click()
+        check(w.store is None and w.volume is None, "selecting images waits for a project")
+        w.newProjectButton.click()
     finally:
         selector.stop()
-    last_project = w.dataRoot / "last-project.json"
-    selected = json.loads(last_project.read_text(encoding="utf-8")).get("source") if last_project.is_file() else None
+    selected = str(w.sourceDirectory) if w.sourceDirectory else None
     REPORT["folder_picker"] = {"expected": str(source), "selected": selected,
                               "visits": len(picker_visits), "case_count": len(w.cases)}
     check(bool(picker_visits) and selected is not None and Path(selected).resolve() == source.resolve()

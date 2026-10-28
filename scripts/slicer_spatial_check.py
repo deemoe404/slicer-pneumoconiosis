@@ -3,6 +3,7 @@ import csv
 import json
 import time
 import traceback
+import uuid
 from pathlib import Path
 
 import qt
@@ -61,9 +62,8 @@ def click_list_row(w, row):
 try:
     slicer.util.selectModule("PneumoconiosisAnnotator")
     w = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
-    project = OUT / "spatial-store"
-    for suffix in ("", "-wal", "-shm"):
-        (project / ("annotations.sqlite3" + suffix)).unlink(missing_ok=True)
+    project = OUT / "spatial-store" / uuid.uuid4().hex
+    REPORT["project_directory"] = str(project)
     w.dataRoot = OUT / "spatial-settings"
     check(w.openDirectory(ROOT.parent / "2023Sample", project, "reader-01"), "open existing DX samples in an isolated spatial QA project")
     check(w.layout.itemAt(0).widget() == w.headerWidget and w.layout.itemAt(1).widget() == w.features.audioWidget

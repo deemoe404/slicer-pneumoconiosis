@@ -27,25 +27,15 @@ def start():
         slicer.util.selectModule("PneumoconiosisAnnotator")
         widget = slicer.app.moduleManager().module("PneumoconiosisAnnotator").widgetRepresentation().self()
         data_root = widget.dataRoot
+        window.setProperty("PneumoProjectWorkflow", True)
         window.setWindowTitle("尘肺胸片标注 · 3D Slicer")
         window.resize(1400, 950)
         console = window.pythonConsole()
         if console is not None and console.parent() is not None:
             slicer.util.setPythonConsoleVisible(False)
         slicer.util.findChild(window, "PanelDockWidget").setMinimumWidth(370)
-        last_path = data_root / "last-project.json"
-        if last_path.exists():
-            last = json.loads(last_path.read_text(encoding="utf-8"))
-            if Path(last["source"]).is_dir():
-                widget.openDirectory(last["source"], projectDirectory=last["project"])
-            else:
-                logging.warning("Previous chest-radiograph directory is unavailable; select its new location.")
-        else:
-            from PneumoconiosisLib.runtime import packaged
-            sample = ROOT.parent / "2023Sample"
-            if not packaged(ROOT) and sample.exists():
-                widget.openDirectory(sample)
         status = {"initialized": True, "process_id": os.getpid(),
+                  "workflow_state": "empty", "source_directory": None, "project_directory": None,
                   "interface_language": "zh_CN", "selected_module": slicer.util.selectedModule(),
                   "ready": widget.currentIndex >= 0, "case_count": len(widget.cases),
                   "slicer": slicer.app.applicationVersion, "current_reader": widget.currentReader,
