@@ -211,9 +211,9 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         spatial = qt.QGroupBox("小阴影标注")
         self.spatialGroup = spatial
         spatial_layout = qt.QVBoxLayout(spatial)
-        tools = qt.QVBoxLayout()
-        self.circleButton = qt.QPushButton("标注圆形小阴影：按直径")
-        self.regionButton = qt.QPushButton("不规则形小阴影：按宽度")
+        tools = qt.QHBoxLayout()
+        self.circleButton = qt.QPushButton("+圆形小阴影")
+        self.regionButton = qt.QPushButton("+不规则小阴影")
         self.finishMarkupButton = qt.QPushButton("结束绘制")
         self.circleButton.connect("clicked()", lambda: self.markups.start("circle"))
         self.regionButton.connect("clicked()", lambda: self.markups.start("polygon"))
