@@ -4,6 +4,14 @@ import qt
 from .core import GRADES
 
 
+class ClickToSetStyle(qt.QProxyStyle):
+    """Use Qt's native absolute click and drag handling for the rating sliders."""
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == qt.QStyle.SH_Slider_AbsoluteSetButtons:
+            return qt.Qt.LeftButton
+        return self.baseStyle().styleHint(hint, option, widget, returnData)
+
+
 class GradeRuler(qt.QWidget):
     """One labelled ruler aligned to the native handle centres of all six sliders."""
     def __init__(self, slider, parent=None):
@@ -56,6 +64,10 @@ class GradeSlider(qt.QWidget):
         self.nameLabel.setMinimumWidth(28)
         layout.addWidget(self.nameLabel)
         self.slider = qt.QSlider(qt.Qt.Horizontal)
+        # Keep a separate, slider-owned style; never take ownership of the app's style.
+        self.clickStyle = ClickToSetStyle()
+        self.clickStyle.setParent(self.slider)
+        self.slider.setStyle(self.clickStyle)
         self.slider.setLayoutDirection(qt.Qt.LeftToRight)
         self.slider.setMinimumWidth(190)
         self.slider.setRange(0, len(GRADES) - 1)
@@ -65,7 +77,7 @@ class GradeSlider(qt.QWidget):
         self.slider.setTickPosition(qt.QSlider.TicksBelow)
         self.slider.setTracking(False)
         self.slider.setAccessibleName(zone_name + "小阴影密集度")
-        self.slider.setToolTip("12 档：" + "、".join(GRADES) + "；拖动或用左右方向键调整。")
+        self.slider.setToolTip("12 档：" + "、".join(GRADES) + "；点击滑轨直接选档，也可拖动或用左右方向键调整。")
         self.slider.installEventFilter(self)
         layout.addWidget(self.slider, 1)
         self.valueLabel = qt.QLabel()

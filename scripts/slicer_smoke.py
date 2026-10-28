@@ -154,13 +154,25 @@ def run():
                               qt.Qt.NoButton, qt.Qt.NoModifier, qt.Qt.NoScrollPhase, False)
         slicer.app.sendEvent(control.slider, wheel)
         check(control.value == "0/0" and control.slider.value == 1, "scrolling over a slider cannot accidentally change a grade")
+        for step in (8, 2, 11, 0):
+            mouse(control.slider, qt.QEvent.MouseButtonPress, step)
+            mouse(control.slider, qt.QEvent.MouseButtonRelease, step)
+            check(control.slider.value == step and control.value == GRADES[step]
+                  and w.store.get(w.cases[0]["case_id"], "reader-01")["zones"]["RU"]["grade"] == GRADES[step],
+                  f"clicking the track jumps directly to grade {GRADES[step]} and saves it")
         control.unreadButton.click()
         mouse(control.slider, qt.QEvent.MouseButtonPress, 0)
         mouse(control.slider, qt.QEvent.MouseMove, 11)
-        check(control.value == "unread" and control.valueLabel.text == "3/+", "dragging previews the exact grade without writing intermediate ratings")
+        check(control.value == "0/-" and control.valueLabel.text == "3/+", "dragging previews the exact grade without writing intermediate ratings")
         mouse(control.slider, qt.QEvent.MouseButtonRelease, 11)
         check(control.value == "3/+" and w.store.get(w.cases[0]["case_id"], "reader-01")["zones"]["RU"]["grade"] == "3/+",
               "releasing a native mouse drag saves the selected slider grade immediately")
+        mouse(control.slider, qt.QEvent.MouseButtonPress, 3)
+        mouse(control.slider, qt.QEvent.MouseMove, 7)
+        mouse(control.slider, qt.QEvent.MouseButtonRelease, 7)
+        check(control.value == GRADES[7] and control.slider.value == 7
+              and w.store.get(w.cases[0]["case_id"], "reader-01")["zones"]["RU"]["grade"] == GRADES[7],
+              "a track click can continue into a drag and save the final grade")
         # All twelve valid grades pass through native slider signals into persistence.
         for i, zone in enumerate(ZONES):
             rate(w, zone, GRADES[i])
