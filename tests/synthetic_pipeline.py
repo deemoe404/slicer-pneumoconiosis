@@ -91,6 +91,8 @@ def restore_and_export(directory):
           "JSON contains the current record and both saved revisions", checks)
     exported = copy.deepcopy(package["records"][0])
     reference = exported["partition"].pop("zone_map")
+    check(exported.pop("reading_state") == "complete",
+          "research delivery explicitly marks the completed fixture as read", checks)
     check(exported == expected, "export preserves exact quality, scores, geometry and model provenance", checks)
     with paths[0].open(encoding="utf-8-sig", newline="") as stream:
         scores = list(csv.DictReader(stream))
@@ -200,6 +202,9 @@ def run(output, report):
                               capture_output=True, text=True, encoding="utf-8", timeout=60, cwd=ROOT)
     (directory / "restore.stdout.log").write_text(restored.stdout, encoding="utf-8")
     (directory / "restore.stderr.log").write_text(restored.stderr, encoding="utf-8")
+    if restored.returncode:
+        print(restored.stdout, flush=True)
+        print(restored.stderr, file=sys.stderr, flush=True)
     restored.check_returncode()
     verification = json.loads((directory / "restore-report.json").read_text(encoding="utf-8"))
     checks.extend(verification["checks"])
