@@ -30,6 +30,7 @@ from PneumoconiosisLib.viewer_toolbar import ViewerToolbar
 from PneumoconiosisLib.image_view import orient_image, remove_volume, set_background
 from PneumoconiosisLib.reference_view import ReferenceView, VIEW_NAME as REFERENCE_VIEW
 from PneumoconiosisLib.runtime import data_directory
+from PneumoconiosisLib.labelme_export_view import LabelmeExport
 
 
 class PneumoconiosisAnnotator(ScriptedLoadableModule):
@@ -180,6 +181,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.exportButton = qt.QPushButton("导出结果")
         self.exportButton.connect("clicked()", self.chooseExport)
         progress_row.addWidget(self.exportButton)
+        self.labelmeExport = LabelmeExport(self, ROOT)
+        progress_row.addWidget(self.labelmeExport.button)
         header.addLayout(progress_row)
         self.layout.addWidget(self.headerWidget)
 
@@ -277,6 +280,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def cleanup(self):
         self.saveTimer.stop()
+        self.labelmeExport.close()
         self.prepareLeave()
         self.references.close()
         self.viewerToolbar.close()
@@ -803,6 +807,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def updateControls(self):
         active = self.currentIndex >= 0 and self.volume is not None
+        self.labelmeExport.update_controls()
         for control in [self.exportButton, self.caseCombo, self.readerCombo, self.completeButton, self.ratingsWidget]:
             control.setEnabled(active)
         self.viewerToolbar.updateControls()

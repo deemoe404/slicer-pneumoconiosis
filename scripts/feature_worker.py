@@ -1,4 +1,4 @@
-"""Isolated model/audio processes. Requests and results are newline-delimited JSON."""
+"""Isolated model/audio/export processes with newline-delimited JSON results."""
 from __future__ import annotations
 
 import argparse
@@ -171,16 +171,24 @@ def play(job):
     emit(event="played")
 
 
+def labelme(job):
+    from PneumoconiosisLib.labelme_export import export_labelme
+    snapshot = json.loads(Path(job["snapshot"]).read_text(encoding="utf-8"))
+    result = export_labelme(job["destination"], snapshot,
+                           progress=lambda current, total: emit(event="progress", current=current, total=total))
+    emit(event="exported", **result)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("model", "record", "play"))
+    parser.add_argument("mode", choices=("model", "record", "play", "labelme"))
     parser.add_argument("job", nargs="?")
     args = parser.parse_args()
     try:
         if args.mode == "model":
             model_loop()
         else:
-            (record if args.mode == "record" else play)(json.loads(args.job))
+            {"record": record, "play": play, "labelme": labelme}[args.mode](json.loads(args.job))
     except Exception as exc:
         traceback.print_exc(file=sys.stderr)
         emit(event="error", message=str(exc))

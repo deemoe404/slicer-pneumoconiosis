@@ -369,10 +369,8 @@ class AnnotationStore:
             recovered += 1
         return recovered
 
-    def export(self, destination, case_ids):
-        """Export all participating readers from one snapshot into a dated directory."""
-        destination = Path(destination).expanduser().resolve()
-        destination.mkdir(parents=True, exist_ok=True)
+    def export_snapshot(self, case_ids):
+        """Capture participating readers and source metadata in one read transaction."""
         case_ids = tuple(dict.fromkeys(case_ids))
         wanted = set(case_ids)
         with self.connection:
@@ -392,8 +390,10 @@ class AnnotationStore:
                 raise ValueError("当前病例列表还没有实际阅片记录，暂不能导出。")
             images = []
             dimensions = {}
+            sources = {}
             for case_id in case_ids:
                 metadata = json.loads(self.connection.execute("SELECT metadata_json FROM cases WHERE case_id=?", (case_id,)).fetchone()[0])
+                sources[case_id] = metadata
                 dimensions[case_id] = {k: metadata[k] for k in ("columns", "rows")}
                 if not metadata.get("source_relative_path"):
                     raise ValueError("缺少原片相对路径，请重新打开胸片目录后再导出。")
@@ -411,13 +411,20 @@ class AnnotationStore:
                 packages.append({"schema_version": 4, "standard": STANDARD, "exported_at": exported_at, "reader_id": reader,
                                  "coordinate_system": COORDINATES, "grade_codes": GRADE_CODES, "zone_names": ZONE_NAMES,
                                  "quality_grades": QUALITY_GRADES, "records": records, "history": histories.get(reader, [])})
+        return {"packages": packages, "images": images, "sources": sources}
+
+    def export(self, destination, case_ids):
+        """Export all participating readers from one snapshot into a dated directory."""
+        destination = Path(destination).expanduser().resolve()
+        destination.mkdir(parents=True, exist_ok=True)
+        snapshot = self.export_snapshot(case_ids)
         stem = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         # Rename a complete bundle into place; a failure leaves only a clearly
         # marked hidden partial directory, never a successful-looking export.
         temporary = Path(tempfile.mkdtemp(prefix=".partial-export-", dir=destination))
         final_directory = destination / stem
-        for package in packages:
-            self._write_reader_export(temporary / package["reader_id"], package, images)
+        for package in snapshot["packages"]:
+            self._write_reader_export(temporary / package["reader_id"], package, snapshot["images"])
         os.replace(temporary, final_directory)
         return final_directory
 

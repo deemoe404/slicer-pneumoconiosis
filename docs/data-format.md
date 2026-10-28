@@ -194,6 +194,18 @@ case_id,reader_id,annotation_id,kind,label,state,vertex_index,i,j,k,columns,rows
 
 `vertex_index` 从 0 开始；以病例、读者、标注 ID 分组，再按该列恢复顶点顺序。分区定位点不在这个 CSV 中，须读取 JSON 的 `partition.landmarks`。
 
+## LabelMe 独立导出
+
+「导出 LabelMe」使用独立目录，不向普通研究导出包添加文件。根目录为 `YYYYMMDD-HHMMSS-ffffff`，读者子目录中的每张图像有一组同名 `<case_id>.png` 和 `<case_id>.json`，根目录另有 `export-report.json`。读者参与规则与普通导出相同；只转换当前记录，不转换修改历史。
+
+每图 JSON 的 LabelMe 字段为 `version`（兼容目标 `7.9.1`）、`flags`、`shapes`、`imagePath`、`imageData`、`imageHeight`、`imageWidth`。`imagePath` 是同目录 PNG 文件名，`imageData=null`。每个形状包含原标签 `label`、二维原图坐标 `points`、`shape_type=point/polygon`、`group_id=null`、`flags={}`、`description=""` 和 `mask=null`。扩展字段 `case_id`、`reader_id` 与每形状 `annotation_id` 用于追溯；它们不是 LabelMe 的评分语义。
+
+`flags.case_complete` 表示本项目的病例完成状态，`flags.has_skipped_shapes` 表示存在未转换的轮廓。有效形状保留顶点顺序和小数坐标，I/J 映射到 x/y，K=0 不写入；无效多边形的 ID、标签及原因保存在报告 `records[].skipped_shapes`。空形状列表不代表阴性；仅有评分、没有空间标注的病例也可能为空。
+
+PNG 是保持 `(rows, columns)` 和存储像素顺序的 8 位灰度查看图，不缩放、裁剪或翻转像素，不嵌入 DICOM 标签。转换复用本项目的 DICOM 显示读取：先应用 Modality LUT / rescale，再应用首个 VOI LUT 或窗宽窗位；没有 VOI 时用图像范围归一化，MONOCHROME1 反相。所有读者使用相同图像，不使用读者的显示设置。转换读取的原片字节必须与导入时 SHA256 相符；不能解码时直接报错，不生成占位图。PNG 不保留 DICOM 完整灰度或物理像素间距的显示比例。
+
+报告 `schema_version=1`，包含兼容版本、导出时间、读者列表、每例完成状态、形状数和跳过原因。`images` 记录原片相对路径、源文件哈希、PNG 哈希、原始尺寸及转换后的灰度映射范围、反相状态和间距；不输出原片绝对路径或原始 UID。图像转换在独立后台进程内使用最多四个线程，整包写完才发布最终日期目录。报告和 PNG 均是研究数据，片内文字不会自动脱敏。
+
 ## 读取示例
 
 以下示例使用标准库和 NumPy（可在项目 `.venv` 运行），显式检查版本，只读取当前记录：
