@@ -37,7 +37,7 @@ def run():
         raise RuntimeError("Refusing to reuse an existing test installation.")
     REPORT.update(commit=metadata["commit"], installer=installer.name, sha256=file_sha256(installer),
                   windows_requirement=metadata["windows"], platform=platform.platform(),
-                  windows_version=list(sys.getwindowsversion()[:3]), architecture=platform.machine(),
+                  windows_version=platform.win32_ver()[1], architecture=platform.machine(),
                   installation=str(install), graphics="Mesa llvmpipe (test only; not shipped)")
     command = [installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=" + str(install)]
     checked(command + ["/LOG=" + str(OUT / "install.log")], timeout=300)

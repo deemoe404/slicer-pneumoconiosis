@@ -50,7 +50,8 @@ def events(seconds=.1):
 try:
     if sys.platform == "win32":
         import ctypes
-        REPORT["windows_version"] = list(sys.getwindowsversion()[:3])
+        # GetVersionEx in Slicer's process can report Windows 8 on a newer host.
+        REPORT["windows_version"] = platform.win32_ver()[1]
         REPORT["windows_active_code_page"] = ctypes.windll.kernel32.GetACP()
         check(REPORT["windows_active_code_page"] == 65001,
               "Slicer uses a UTF-8 process code page for Unicode paths")
