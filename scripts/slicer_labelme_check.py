@@ -1,6 +1,7 @@
 """Exercise the real export button/worker using an isolated synthetic chest image."""
 import json
 from pathlib import Path
+import sys
 import time
 import traceback
 import uuid
@@ -185,10 +186,18 @@ def run():
                     dialog.setDirectory(str(destination))
                     dialog.accept()
 
-        timer.connect("timeout()", choose_directory)
-        timer.start(50)
-        w.labelmeExport.button.click()
-        timer.stop()
+        if sys.platform == "darwin":
+            sys.path.insert(0, str(ROOT / "scripts"))
+            from macos_native_picker import drive_native_picker
+            drive_native_picker(w.labelmeExport.button.click, destination)
+            visits.append(True)
+        else:
+            timer.connect("timeout()", choose_directory)
+            timer.start(50)
+            try:
+                w.labelmeExport.button.click()
+            finally:
+                timer.stop()
         check(bool(visits) and w.labelmeExport.worker is not None, "button opens a directory picker and starts the actual worker")
         check(not w.labelmeExport.button.isEnabled(), "repeated export is disabled while the worker runs")
         deadline = time.monotonic() + 60

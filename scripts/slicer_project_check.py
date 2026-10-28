@@ -5,6 +5,8 @@ from pathlib import Path
 import runpy
 import shutil
 import sqlite3
+import subprocess
+import sys
 import time
 import traceback
 import uuid
@@ -31,6 +33,7 @@ def check(value, message):
     if not value:
         raise AssertionError(message)
     REPORT["checks"].append(message)
+    print("PASS: " + message, flush=True)
 
 
 def events(seconds=.15):
@@ -41,6 +44,12 @@ def events(seconds=.15):
 
 
 def picker(button, name, directory=None):
+    if sys.platform == "darwin":
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from macos_native_picker import drive_native_picker
+        drive_native_picker(button.click, directory)
+        check(True, "real macOS folder picker: " + name)
+        return
     visited = []
     def select():
         for dialog in slicer.util.findChildren(slicer.util.mainWindow(), name=name):
@@ -117,6 +126,8 @@ def watch_dialogs():
 
 def run():
     try:
+        if os.environ.get("PNEUMO_AX_PROBE"):
+            subprocess.Popen([os.environ["PNEUMO_AX_PROBE"], str(os.getpid()), str(OUT / (PHASE + "-ax.json"))])
         if PHASE == "create":
             fixture()
             project.mkdir()
@@ -207,6 +218,10 @@ def run():
         w.features.qualityChoices.buttons[2].click()
         w.features.qualityChoices.buttons[3].click()
         REPORT["status"] = "awaiting-clean-exit"
+        if os.environ.get("PNEUMO_AX_PROBE"):
+            probe = json.loads((OUT / (PHASE + "-ax.json")).read_text())
+            check(probe["trusted"] and probe["successfulQueries"] > 100,
+                  "external macOS accessibility selection queries remain functional during native picker use")
         write_report()
         window.close()
     except Exception:

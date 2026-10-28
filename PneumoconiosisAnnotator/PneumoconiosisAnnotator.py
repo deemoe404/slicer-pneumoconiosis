@@ -32,6 +32,7 @@ from PneumoconiosisLib.labelme_export_view import LabelmeExport
 from PneumoconiosisLib.busy import BusyOverlay, blocking
 from PneumoconiosisLib.geometry import measure, measurement_text
 from PneumoconiosisLib.project import validate_project
+from PneumoconiosisLib.directory_picker import choose_directory
 
 
 class PneumoconiosisAnnotator(ScriptedLoadableModule):
@@ -351,43 +352,27 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         initial = qt.QStandardPaths.writableLocation(qt.QStandardPaths.DocumentsLocation)
         if self.sourceDirectory:
             initial = str(self.sourceDirectory)
-        # Own this directory-only dialog instead of delegating folder opening to
-        # the operating system or Slicer's generic Add Data dialog.
-        dialog = qt.QFileDialog(slicer.util.mainWindow())
-        dialog.setObjectName("PneumoCaseDirectoryDialog")
-        dialog.setOption(qt.QFileDialog.DontUseNativeDialog, True)
-        dialog.setOption(qt.QFileDialog.ShowDirsOnly, True)
-        dialog.setOption(qt.QFileDialog.ReadOnly, True)
-        dialog.setFileMode(qt.QFileDialog.Directory)
-        dialog.setWindowTitle("选择胸片文件夹")
-        dialog.setDirectory(initial)
-        if dialog.exec() and dialog.selectedFiles():
+        directory = choose_directory(slicer.util.mainWindow(), "选择胸片文件夹", initial, "PneumoCaseDirectoryDialog")
+        if directory:
             try:
-                self.openDirectory(dialog.selectedFiles()[0])
+                self.openDirectory(directory)
             except Exception as exc:
                 logging.exception("Cannot open the selected chest-radiograph directory")
                 self.showError("打开失败：" + str(exc))
-        dialog.deleteLater()
 
     def chooseProject(self, create=False):
         if self.sourceDirectory is None:
             return
-        dialog = qt.QFileDialog(slicer.util.mainWindow())
-        dialog.setObjectName("PneumoNewProjectDialog" if create else "PneumoOpenProjectDialog")
-        dialog.setOption(qt.QFileDialog.DontUseNativeDialog, True)
-        dialog.setOption(qt.QFileDialog.ShowDirsOnly, True)
-        dialog.setOption(qt.QFileDialog.ReadOnly, not create)
-        dialog.setFileMode(qt.QFileDialog.Directory)
-        dialog.setWindowTitle("新建标注项目：选择或新建一个空文件夹" if create else "打开标注项目文件夹")
-        dialog.setDirectory(str(self.store.directory.parent if self.store else self.sourceDirectory.parent))
+        directory = choose_directory(
+            slicer.util.mainWindow(), "新建标注项目：选择或新建一个空文件夹" if create else "打开标注项目文件夹",
+            self.store.directory.parent if self.store else self.sourceDirectory.parent,
+            "PneumoNewProjectDialog" if create else "PneumoOpenProjectDialog", create=create)
         try:
-            if dialog.exec() and dialog.selectedFiles():
-                self.openDirectory(self.sourceDirectory, dialog.selectedFiles()[0], create=create)
+            if directory:
+                self.openDirectory(self.sourceDirectory, directory, create=create)
         except Exception as exc:
             logging.exception("Cannot open annotation project")
             self.showError("项目未打开：" + str(exc))
-        finally:
-            dialog.deleteLater()
 
     def clearProject(self, clearReferences=False):
         """Detach only after prepareLeave succeeds, keeping every project on disk."""
@@ -819,7 +804,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
     def chooseExport(self):
         if self.store is None or not self.prepareLeave():
             return
-        directory = qt.QFileDialog.getExistingDirectory(slicer.util.mainWindow(), "选择交付包的导出位置（胸片另行交付）", str(self.store.directory.parent))
+        directory = choose_directory(slicer.util.mainWindow(), "选择交付包的导出位置（胸片另行交付）",
+                                     self.store.directory.parent, "PneumoDeliveryDirectoryDialog", create=True)
         if directory:
             try:
                 bundle = self.exportResults(directory)

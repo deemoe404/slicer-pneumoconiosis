@@ -8,6 +8,7 @@ import slicer
 
 from .core import atomic_write
 from .workers import Worker
+from .directory_picker import choose_directory
 
 
 class LabelmeExport:
@@ -23,9 +24,8 @@ class LabelmeExport:
     def choose(self):
         if self.w.store is None or self.worker is not None:
             return
-        directory = qt.QFileDialog.getExistingDirectory(
-            slicer.util.mainWindow(), "选择 LabelMe 导出目录", str(self.w.store.directory),
-            qt.QFileDialog.ShowDirsOnly | qt.QFileDialog.DontUseNativeDialog)
+        directory = choose_directory(slicer.util.mainWindow(), "选择 LabelMe 导出目录",
+                                     self.w.store.directory, "PneumoLabelmeDirectoryDialog", create=True)
         if directory:
             try:
                 self.start(directory)

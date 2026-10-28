@@ -11,6 +11,7 @@ import slicer
 from .core import atomic_write
 from .image_view import orient_image, remove_volume, set_background
 from .references import read_reference, scan_references
+from .directory_picker import choose_directory
 
 VIEW_NAME = "PneumoReference"
 LAYOUT_ID = 1621
@@ -94,23 +95,14 @@ class ReferenceView(qt.QWidget):
         return self.w.dataRoot / "reference-library.json"
 
     def choose_directory(self):
-        dialog = qt.QFileDialog(slicer.util.mainWindow())
-        dialog.setObjectName("PneumoReferenceDirectoryDialog")
-        dialog.setOption(qt.QFileDialog.DontUseNativeDialog, True)
-        dialog.setOption(qt.QFileDialog.ShowDirsOnly, True)
-        dialog.setOption(qt.QFileDialog.ReadOnly, True)
-        dialog.setFileMode(qt.QFileDialog.Directory)
-        dialog.setWindowTitle("选择标准片文件夹")
         initial = str(self.root) if self.root and self.root.is_dir() else qt.QStandardPaths.writableLocation(qt.QStandardPaths.DocumentsLocation)
-        dialog.setDirectory(initial)
+        directory = choose_directory(slicer.util.mainWindow(), "选择标准片文件夹", initial, "PneumoReferenceDirectoryDialog")
         try:
-            if dialog.exec() and dialog.selectedFiles():
-                self.open_directory(dialog.selectedFiles()[0])
+            if directory:
+                self.open_directory(directory)
         except Exception as exc:
             logging.exception("Cannot open the reference library")
             self.show_error("标准片打开失败：" + str(exc))
-        finally:
-            dialog.deleteLater()
 
     @blocking("正在打开标准片目录…")
     def open_directory(self, directory, selected=None, visible=True):
