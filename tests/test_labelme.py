@@ -53,14 +53,14 @@ class LabelmeTests(unittest.TestCase):
         self.case = next(c for c in self.cases if "批次 A" in c["file_path"])
         self.store = AnnotationStore(self.directory / "project")
         self.store.import_cases(self.cases)
-        self.point = {"id": str(uuid.uuid4()), "kind": "point", "label": "定位点 一",
-                      "points_ijk": [[-.125, 3.5, 0]]}
+        self.ellipse = {"id": str(uuid.uuid4()), "kind": "ellipse", "label": "圆形小阴影 一",
+                      "points_ijk": [[-.125, 3.5, 0], [2, 6, 0]]}
         self.polygon = {"id": str(uuid.uuid4()), "kind": "polygon", "label": "区域",
                         "points_ijk": [[2, 1, 0], [8, 1, 0], [6, 6, 0], [2, 6, 0]]}
         self.draft = {"id": str(uuid.uuid4()), "kind": "polygon", "label": "未画完",
                       "points_ijk": [[4, 3, 0], [5, 4, 0]]}
         self.store.save(self.case["case_id"], "reader-01", empty_zones(),
-                        spatial_annotations=[self.point, self.polygon, self.draft])
+                        spatial_annotations=[self.ellipse, self.polygon, self.draft])
 
     def tearDown(self):
         self.store.close()
@@ -70,7 +70,7 @@ class LabelmeTests(unittest.TestCase):
         return self.store.export_snapshot([c["case_id"] for c in self.cases])
 
     def test_bundle_preserves_raster_coordinates_reader_isolation_and_snapshot(self):
-        second = dict(self.point, label="第二位读者", points_ijk=[[8, 6, 0]])
+        second = dict(self.ellipse, label="第二位读者", points_ijk=[[4, 3, 0], [8, 6, 0]])
         self.store.save(self.case["case_id"], "reader-02", empty_zones(), spatial_annotations=[second])
         self.store.save(self.case["case_id"], "reader-03", empty_zones(), display={"window": 10})
         snapshot = self.snapshot()
@@ -91,7 +91,9 @@ class LabelmeTests(unittest.TestCase):
             self.assertIsNone(data["imageData"])
             self.assertEqual((data["imageHeight"], data["imageWidth"]), (8, 10))
             self.assertEqual(data["reader_id"], reader)
-            self.assertEqual(data["shapes"][0]["points"], [p[:2] for p in (self.point if reader == "reader-01" else second)["points_ijk"]])
+            self.assertEqual(data["shapes"][0]["source_points_ijk"], (self.ellipse if reader == "reader-01" else second)["points_ijk"])
+            self.assertEqual(len(data["shapes"][0]["points"]), 128)
+            self.assertEqual(data["shapes"][0]["shape_type"], "polygon")
             if reader == "reader-01":
                 self.assertEqual(data["shapes"][1]["points"], [p[:2] for p in self.polygon["points_ijk"]])
                 self.assertTrue(data["flags"]["has_skipped_shapes"])

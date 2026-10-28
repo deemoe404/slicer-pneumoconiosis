@@ -3,6 +3,8 @@ import json
 import logging
 from pathlib import Path
 
+from .busy import blocking
+
 import qt
 import slicer
 
@@ -110,6 +112,7 @@ class ReferenceView(qt.QWidget):
         finally:
             dialog.deleteLater()
 
+    @blocking("正在打开标准片目录…")
     def open_directory(self, directory, selected=None, visible=True):
         root = Path(directory).expanduser().resolve()
         images = scan_references(root)
@@ -152,6 +155,7 @@ class ReferenceView(qt.QWidget):
             remove_volume(volume)
             raise
 
+    @blocking("正在切换标准片…")
     def choose_image(self, index):
         if index < 0 or index >= len(self.images) or index == self.index:
             return

@@ -17,7 +17,7 @@ class LabelmeExport:
         self.last_result = self.last_error = None
         self.button = qt.QPushButton("导出 LabelMe")
         self.button.setObjectName("PneumoLabelmeExportButton")
-        self.button.setToolTip("按读者导出胸片 PNG 和人工点 / 多边形标注，可在 LabelMe 中打开。")
+        self.button.setToolTip("按读者导出胸片 PNG 和椭圆 / 多边形标注，可在 LabelMe 中打开。")
         self.button.connect("clicked()", self.choose)
 
     def choose(self):
@@ -37,23 +37,18 @@ class LabelmeExport:
     def start(self, directory):
         if self.worker is not None:
             raise RuntimeError("LabelMe 正在导出，请稍候。")
-        if self.w.store is None or not self.w.prepareLeave():
-            raise RuntimeError("保存失败，已停止导出。")
-        snapshot = self.w.store.export_snapshot([c["case_id"] for c in self.w.cases])
-        for package in snapshot["packages"]:
-            del package["history"]
-        self.last_result = self.last_error = None
-        self.temporary = tempfile.TemporaryDirectory(prefix="pneumo-labelme-")
-        path = Path(self.temporary.name) / "snapshot.json"
-        atomic_write(path, json.dumps(snapshot, ensure_ascii=False, allow_nan=False))
-        self.progress = qt.QProgressDialog("正在准备胸片…", "取消", 0, 0, slicer.util.mainWindow())
-        self.progress.setWindowTitle("导出 LabelMe")
-        self.progress.setWindowModality(qt.Qt.WindowModal)
-        self.progress.setMinimumDuration(0)
-        self.progress.setAutoClose(False)
-        self.progress.setAutoReset(False)
-        self.progress.connect("canceled()", self.cancel)
-        self.progress.show()
+        with self.w.busy.during("正在保存并准备导出…"):
+            if self.w.store is None or not self.w.prepareLeave():
+                raise RuntimeError("保存失败，已停止导出。")
+            snapshot = self.w.store.export_snapshot([c["case_id"] for c in self.w.cases])
+            for package in snapshot["packages"]:
+                del package["history"]
+            self.last_result = self.last_error = None
+            self.temporary = tempfile.TemporaryDirectory(prefix="pneumo-labelme-")
+            path = Path(self.temporary.name) / "snapshot.json"
+            atomic_write(path, json.dumps(snapshot, ensure_ascii=False, allow_nan=False))
+        self.progress = self.w.busy
+        self.progress.begin("正在导出 LabelMe…", cancel=self.cancel)
         try:
             self.worker = Worker(self.root, "labelme", self.event, self.finished,
                                  job={"snapshot": str(path), "destination": str(directory)})
@@ -64,9 +59,7 @@ class LabelmeExport:
 
     def event(self, value):
         if value["event"] == "progress" and self.progress is not None:
-            self.progress.setRange(0, value["total"])
-            self.progress.setValue(value["current"])
-            self.progress.setLabelText(f"正在导出图像与标注… {value['current']}/{value['total']}")
+            self.progress.set_progress(value["current"], value["total"])
         elif value["event"] == "exported":
             self.last_result = value
         elif value["event"] == "error":
@@ -88,6 +81,10 @@ class LabelmeExport:
         qt.QDesktopServices.openUrl(qt.QUrl.fromLocalFile(result["directory"]))
 
     def cancel(self):
+        if self.worker is not None:
+            self.worker.closing = True
+            self.worker.process.kill()
+            self.worker.process.waitForFinished(1500)
         self.close()
         self.w.setSaveStatus("LabelMe 导出已取消。")
 
@@ -96,9 +93,7 @@ class LabelmeExport:
             self.worker.close()
             self.worker = None
         if self.progress is not None:
-            self.progress.blockSignals(True)
-            self.progress.close()
-            self.progress.deleteLater()
+            self.progress.end()
             self.progress = None
         if self.temporary is not None:
             self.temporary.cleanup()

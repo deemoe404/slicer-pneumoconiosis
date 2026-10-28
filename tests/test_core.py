@@ -112,7 +112,7 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(package["records"][0]["zones"], zones)
         self.assertEqual(package["records"][1]["zones"], empty_zones())
         self.assertEqual(package["records"][0]["spatial_annotations"][0]["label"], '=HYPERLINK("example")')
-        self.assertEqual(package["schema_version"], 4)
+        self.assertEqual(package["schema_version"], 5)
         self.assertNotIn("note", package["records"][0])
         self.assertNotIn("/private/source", paths[1].read_text())
         self.assertEqual(len(package["history"]), 1)
@@ -204,7 +204,7 @@ class PersistenceTests(unittest.TestCase):
                 "points_ijk": points or [[100, 200, 0], [400, 250, 0], [200, 500, 0]]}
 
     def test_spatial_restart_reader_case_isolation_and_vertex_export(self):
-        point = self.spatial("point", [[-0.125, 350.5, 0]])
+        point = self.spatial("ellipse", [[-0.125, 350.5, 0], [20, 380, 0]])
         polygon = self.spatial()
         self.store.save("CXR-0", "r", empty_zones(), spatial_annotations=[point, polygon])
         self.store.close()
@@ -217,11 +217,14 @@ class PersistenceTests(unittest.TestCase):
         bundle = self.store.export(self.directory / "exports", ["CXR-0", "CXR-1"]) / "r"
         paths = [bundle / name for name in ("r.csv", "r.json", "r-spatial.csv", "r-images.csv")]
         vertices = list(csv.DictReader(paths[2].read_text(encoding="utf-8-sig").splitlines()))
-        self.assertEqual(len(vertices), 4)
+        self.assertEqual(len(vertices), 5)
         self.assertEqual(float(vertices[0]["i"]), -0.125)
+        self.assertEqual(vertices[0]["measurement_method"], "ellipse_axes")
+        self.assertEqual(vertices[0]["measurement_unit"], "px")
+        self.assertEqual(float(vertices[0]["long_diameter"]), 29.5)
         package = json.loads(paths[1].read_text())
         self.assertEqual(package["coordinate_system"]["index_base"], 0)
-        self.assertEqual(package["records"][0]["image"], {"columns": 2500, "rows": 3000})
+        self.assertEqual(package["records"][0]["image"]["measurement_scale"]["unit"], "px")
         self.assertEqual(package["records"][0]["spatial_annotations"], annotations)
 
     def test_unfinished_or_crossed_region_autosaves_as_draft_but_cannot_complete(self):
@@ -237,7 +240,7 @@ class PersistenceTests(unittest.TestCase):
         self.assertIsNone(polygon_issue([[0, 0, 0], [100, 0, 0], [100, 100, 0], [0, 100, 0]]))
 
     def test_bad_spatial_coordinate_cannot_overwrite_and_deletion_is_audited(self):
-        point = self.spatial("point", [[100, 200, 0]])
+        point = self.spatial("ellipse", [[100, 200, 0], [120, 240, 0]])
         self.store.save("CXR-0", "r", empty_zones(), spatial_annotations=[point])
         for coordinates in ([float("nan"), 200, 0], [2501, 200, 0], [100, -1, 0], [100, 200, 1]):
             invalid = dict(point, points_ijk=[coordinates])

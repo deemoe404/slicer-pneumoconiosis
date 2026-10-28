@@ -18,7 +18,7 @@ READER_IDS = tuple(f"reader-{number:02d}" for number in range(1, 11))
 if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 from PneumoconiosisLib.core import (
-    AnnotationStore, GRADES, ZONES, ZONE_NAMES, atomic_write, completion_issues, file_sha256, polygon_issue, scan_cases,
+    AnnotationStore, GRADES, ZONES, ZONE_NAMES, atomic_write, completion_issues, file_sha256, shape_issue, scan_cases,
     validate_complete, validate_reader, validate_spatial,
 )
 from PneumoconiosisLib.markups import ImageMarkups
@@ -31,6 +31,8 @@ from PneumoconiosisLib.image_view import orient_image, remove_volume, set_backgr
 from PneumoconiosisLib.reference_view import ReferenceView, VIEW_NAME as REFERENCE_VIEW
 from PneumoconiosisLib.runtime import data_directory
 from PneumoconiosisLib.labelme_export_view import LabelmeExport
+from PneumoconiosisLib.busy import BusyOverlay, blocking
+from PneumoconiosisLib.geometry import measure, measurement_text
 
 
 class PneumoconiosisAnnotator(ScriptedLoadableModule):
@@ -125,6 +127,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.spatialState = []
         self.spatialUpdating = False
         self.dataRoot = data_directory(ROOT)
+        self.busy = BusyOverlay()
         self.saveTimer = qt.QTimer()
         self.saveTimer.setSingleShot(True)
         self.saveTimer.setInterval(450)
@@ -205,21 +208,21 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.layout.addWidget(ratings)
         self.layout.addWidget(self.features.partitionWidget)
 
-        spatial = qt.QGroupBox("点与区域")
+        spatial = qt.QGroupBox("小阴影标注")
         self.spatialGroup = spatial
         spatial_layout = qt.QVBoxLayout(spatial)
-        tools = qt.QHBoxLayout()
-        self.pointButton = qt.QPushButton("＋ 标注点")
-        self.regionButton = qt.QPushButton("＋ 圈选区域")
+        tools = qt.QVBoxLayout()
+        self.ellipseButton = qt.QPushButton("标注圆形小阴影：按直径")
+        self.regionButton = qt.QPushButton("不规则形小阴影：按宽度")
         self.finishMarkupButton = qt.QPushButton("结束绘制")
-        self.pointButton.connect("clicked()", lambda: self.markups.start("point"))
+        self.ellipseButton.connect("clicked()", lambda: self.markups.start("ellipse"))
         self.regionButton.connect("clicked()", lambda: self.markups.start("polygon"))
         self.finishMarkupButton.connect("clicked()", self.finishOrContinueMarkup)
-        for button in (self.pointButton, self.regionButton, self.finishMarkupButton):
+        for button in (self.ellipseButton, self.regionButton, self.finishMarkupButton):
             tools.addWidget(button)
         spatial_layout.addLayout(tools)
         self.markupList = qt.QListWidget()
-        self.markupList.setAccessibleName("点与区域列表")
+        self.markupList.setAccessibleName("小阴影标注列表")
         self.markupList.setSelectionMode(qt.QAbstractItemView.SingleSelection)
         self.markupList.setUniformItemSizes(True)
         self.markupList.setHorizontalScrollBarPolicy(qt.Qt.ScrollBarAlwaysOff)
@@ -236,7 +239,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.deleteMarkupButton.connect("clicked()", self.deleteMarkup)
         selection.addWidget(self.deleteMarkupButton)
         spatial_layout.addLayout(selection)
-        self.spatialHint = qt.QLabel("单击放点；区域依次点选 ≥3 个顶点，右键结束。\n拖动顶点可调整；按原图像素坐标保存。")
+        self.spatialHint = qt.QLabel("椭圆：点选外接框两个对角；多边形：依次点选边界，右键结束。\n拖动控制点可调整，大小随之更新。")
         self.spatialHint.setWordWrap(True)
         self.spatialHint.setStyleSheet("color:#7d8899; font-size:11px;")
         spatial_layout.addWidget(self.spatialHint)
@@ -338,6 +341,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
                 self.showError("打开失败：" + str(exc))
         dialog.deleteLater()
 
+    @blocking("正在打开胸片目录…")
     def openDirectory(self, source, projectDirectory=None, reader=None):
         if not self.prepareLeave():
             return False
@@ -457,10 +461,15 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             return False
         if index == self.currentIndex:
             return True
+        return self._selectCase(index)
+
+    @blocking("正在切换胸片…")
+    def _selectCase(self, index):
         if not self.prepareLeave():
             self._resetCombo()
             return False
         try:
+            record = self.store.get(self.cases[index]["case_id"], self.currentReader)
             new_volume = self._loadVolume(self.cases[index])
         except Exception as exc:
             self._resetCombo()
@@ -469,7 +478,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         old_volume = self.volume
         self.volume = new_volume
         self.currentIndex = index
-        self.currentRecord = self.store.get(self.cases[index]["case_id"], self.currentReader)
+        self.currentRecord = record
         set_background(new_volume)
         self._orientImage()
         self._restoreDisplay(self.currentRecord.get("display", {}))
@@ -513,7 +522,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
 
     def _restoreSpatial(self):
         self.spatialState = self.currentRecord["spatial_annotations"]
-        self.markups.restore(self.volume, self.spatialState)
+        self.markups.restore(self.volume, self.spatialState, self.cases[self.currentIndex])
         self.spatialState = self.markups.capture()
         self.updateSpatialControls()
 
@@ -546,9 +555,10 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
                 kind = node.GetAttribute("PneumoconiosisKind")
                 count = node.GetNumberOfDefinedControlPoints()
                 record = next((v for v in self.spatialState if v["id"] == identifier), None)
-                draft = kind == "polygon" and (record is None or polygon_issue(record["points_ijk"]))
+                draft = record is not None and shape_issue(kind, record["points_ijk"])
                 suffix = " · 草稿" if draft else (" · 待放置" if count == 0 else "")
-                text = ("点 · " if kind == "point" else "区域 · ") + node.GetName() + suffix
+                size = measurement_text(measure(kind, record["points_ijk"], self.cases[self.currentIndex])) if record and not draft else ""
+                text = ("椭圆 · " if kind == "ellipse" else "多边形 · ") + node.GetName() + suffix + (" · " + size if size else "")
                 item = self.markupList.item(row)
                 item.setText(text)
                 item.setToolTip(text)
@@ -565,7 +575,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             selected = self.markups.nodes.get(self.markups.selected_id)
             placing = bool(self.markups.placing_id)
             active = self.volume is not None and self.currentRecord is not None
-            self.pointButton.setEnabled(active)
+            self.ellipseButton.setEnabled(active)
             self.regionButton.setEnabled(active)
             self.markupList.setEnabled(active and bool(self.markups.nodes))
             self.deleteMarkupButton.setEnabled(active and selected is not None)
@@ -574,11 +584,11 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
                 self.markupNameEdit.setText(selected.GetName() if selected else "")
             self.finishMarkupButton.setText("结束绘制" if placing else "继续绘制")
             self.finishMarkupButton.setEnabled(active and (placing or (selected is not None and
-                (selected.GetAttribute("PneumoconiosisKind") == "polygon" or selected.GetNumberOfDefinedControlPoints() == 0))))
+                (selected.GetAttribute("PneumoconiosisKind") == "polygon" or selected.GetNumberOfDefinedControlPoints() < 2))))
             if placing:
-                self.spatialHint.setText("正在绘制：在胸片上单击放点，右键或点“结束绘制”完成。")
+                self.spatialHint.setText("椭圆：点选外接框两个对角；多边形：依次点选边界，右键结束。")
             else:
-                self.spatialHint.setText("单击放点；区域依次点选 ≥3 个顶点，右键结束。\n拖动顶点可调整；按原图像素坐标保存。")
+                self.spatialHint.setText("椭圆：点选外接框两个对角；多边形：依次点选边界，右键结束。\n拖动控制点可调整，大小随之更新。")
         finally:
             self.spatialUpdating = False
         self.updateCompletionControls()
@@ -602,7 +612,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             if self.flushSave():
                 record = next((r for r in self.currentRecord["spatial_annotations"] if r["id"] == self.markups.selected_id), None)
                 if record and record["state"] == "draft":
-                    self.showError(record["label"] + "：" + polygon_issue(record["points_ijk"]) + "已保存草稿，可继续绘制。")
+                    self.showError(record["label"] + "：" + shape_issue(record["kind"], record["points_ijk"]) + "已保存草稿，可继续绘制。")
         else:
             self.markups.continue_placing()
         self.updateSpatialControls()
@@ -660,6 +670,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.markups.finish()
         return self.flushSave()
 
+    @blocking("正在切换读者并恢复标注…")
     def changeReader(self, *_):
         if self.updating:
             return True
@@ -671,16 +682,27 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             self.readerCombo.setCurrentIndex(self.readerCombo.findData(self.currentReader))
             self.readerCombo.blockSignals(False)
             return False
-        self.currentReader = reader
         if self.store and self.currentIndex >= 0:
-            self.currentRecord = self.store.get(self.cases[self.currentIndex]["case_id"], reader)
+            try:
+                record = self.store.get(self.cases[self.currentIndex]["case_id"], reader)
+            except Exception as exc:
+                self.readerCombo.blockSignals(True)
+                self.readerCombo.setCurrentIndex(self.readerCombo.findData(self.currentReader))
+                self.readerCombo.blockSignals(False)
+                self.showError("无法恢复该读者的标注：" + str(exc))
+                return False
+            self.currentReader = reader
+            self.currentRecord = record
             self._restoreSpatial()
             self.store.set_preference("reader", reader)
             self._populate()
             self.features.restore()
             self.updateControls()
+        else:
+            self.currentReader = reader
         return True
 
+    @blocking("正在检查并保存当前病例…")
     def completeCase(self):
         if self.currentRecord is None:
             return False
@@ -723,6 +745,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             except Exception as exc:
                 self.showError("导出失败：" + str(exc))
 
+    @blocking("正在导出研究结果…")
     def exportResults(self, directory):
         if not self.prepareLeave():
             raise RuntimeError("保存失败，已停止导出。")
@@ -772,7 +795,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             ("quality", self.features.qualityWidget, "整片质量", False),
             ("ratings", self.ratingsWidget, "六肺区评分", False),
             ("partition", self.features.partitionWidget, "肺野与六区", partition is None),
-            ("spatial", self.spatialGroup, "点与区域", not self.spatialState),
+            ("spatial", self.spatialGroup, "小阴影标注", not self.spatialState),
             ("audio", self.features.audioWidget, "语音备注", True),
         ):
             issue = issues.get(key)

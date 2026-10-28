@@ -13,7 +13,8 @@ import numpy as np
 from PIL import Image
 
 from .assets import atomic_bytes
-from .core import atomic_write, polygon_issue, validate_reader, validate_spatial
+from .core import atomic_write, shape_issue, validate_reader, validate_spatial
+from .geometry import ellipse_contour
 from .references import read_reference
 
 LABELME_VERSION = "7.9.1"
@@ -47,11 +48,14 @@ def label_file(record):
     for annotation in validate_spatial(record["spatial_annotations"], record["image"]):
         if annotation["state"] != "ready":
             skipped.append({"annotation_id": annotation["id"], "label": annotation["label"],
-                            "reason": polygon_issue(annotation["points_ijk"])})
+                            "reason": shape_issue(annotation["kind"], annotation["points_ijk"])})
             continue
-        shapes.append({"label": annotation["label"], "points": [p[:2] for p in annotation["points_ijk"]],
-                       "group_id": None, "description": "", "shape_type": annotation["kind"],
-                       "flags": {}, "mask": None, "annotation_id": annotation["id"]})
+        points = ellipse_contour(annotation["points_ijk"]) if annotation["kind"] == "ellipse" else annotation["points_ijk"]
+        shapes.append({"label": annotation["label"], "points": [p[:2] for p in points],
+                       "group_id": None, "description": "", "shape_type": "polygon",
+                       "flags": {}, "mask": None, "annotation_id": annotation["id"],
+                       "source_kind": annotation["kind"], "source_points_ijk": annotation["points_ijk"],
+                       "measurement": annotation["measurement"]})
     return {"version": LABELME_VERSION,
             "flags": {"case_complete": record["status"] == "complete", "has_skipped_shapes": bool(skipped)},
             "shapes": shapes, "imagePath": record["case_id"] + ".png", "imageData": None,
@@ -75,7 +79,7 @@ def export_labelme(destination, snapshot, progress=None):
     completed = 0
     report = {"schema_version": 1, "format": "labelme", "labelme_version": LABELME_VERSION,
               "exported_at": packages[0]["exported_at"], "readers": readers,
-              "scope": "current manual points and valid polygons; no lung masks or history",
+              "scope": "current ellipses (128-vertex polygons) and polygons; no lung masks or history",
               "empty_shapes_mean": "no exported spatial shapes; not a negative diagnosis",
               "images": [], "records": []}
     first = temporary / readers[0]

@@ -78,8 +78,8 @@ def capture():
         raise RuntimeError("Demo lung segmentation failed or timed out: " + widget.saveLabel.text)
     partition = widget.features.partition.capture()
     annotations = [
-        {"id": str(uuid.uuid4()), "kind": "point", "label": "P1",
-         "points_ijk": [[columns * .3, rows * .4, 0]]},
+        {"id": str(uuid.uuid4()), "kind": "ellipse", "label": "P1",
+         "points_ijk": [[columns * .3, rows * .4, 0], [columns * .36, rows * .44, 0]]},
         {"id": str(uuid.uuid4()), "kind": "polygon", "label": "R1",
          "points_ijk": [[columns * i, rows * j, 0] for i, j in ((.60, .52), (.75, .53), (.74, .66), (.59, .65))]},
     ]
