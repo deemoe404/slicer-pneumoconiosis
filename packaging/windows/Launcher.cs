@@ -77,8 +77,11 @@ internal static class Launcher
         string logs = Path.Combine(data, "logs");
         Directory.CreateDirectory(logs);
         string script = Path.Combine(root, test ? "qa\\slicer_package_check.py" : "scripts\\start.py");
+        string markups = Path.Combine(root, "extensions", "ExtraMarkups", "lib", "Slicer-5.13", "qt-loadable-modules");
+        if (!File.Exists(Path.Combine(markups, "qSlicerShapeModule.dll")))
+            throw new FileNotFoundException("缺少圆形标注工具，请重新安装尘肺胸片标注。");
         string arguments = "--disable-settings --ignore-slicerrc --no-splash "
-            + "--additional-module-path "
+            + "--additional-module-paths " + Quote(markups) + " "
             + Quote(Path.Combine(root, "PneumoconiosisAnnotator")) + " --python-script " + Quote(script);
         var info = new ProcessStartInfo(slicer, arguments);
         info.UseShellExecute = false;
@@ -93,6 +96,7 @@ internal static class Launcher
         info.EnvironmentVariables["PNEUMO_DATA_ROOT"] = data;
         info.EnvironmentVariables["PYTHONUTF8"] = "1";
         info.EnvironmentVariables["PYTHONDONTWRITEBYTECODE"] = "1";
+        info.EnvironmentVariables["PATH"] = markups + ";" + info.EnvironmentVariables["PATH"];
         if (test) info.EnvironmentVariables["PNEUMO_TEST_OUTPUT"] = Path.GetFullPath(args[1]);
         string path = Path.Combine(logs, "launch-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Process.GetCurrentProcess().Id + ".log");
         using (var log = new StreamWriter(path, false, new UTF8Encoding(false)))

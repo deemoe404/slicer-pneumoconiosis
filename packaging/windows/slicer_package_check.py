@@ -9,6 +9,7 @@ import traceback
 
 import qt
 import slicer
+import vtk
 
 ROOT = Path(os.environ.get("PNEUMO_APPLICATION_ROOT", Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -137,6 +138,21 @@ try:
     w.fitImage()
     REPORT["chinese_text"] = check_language(w, OUT / "language-check", check, events)
     REPORT["references"] = check_reference_view(w, OUT / "reference-check", check, events)
+    # The compiled extension must be usable in the relocated, offline installation.
+    w.circleButton.click()
+    circle = w.markups.nodes[w.markups.selected_id]
+    matrix = vtk.vtkMatrix4x4()
+    w.volume.GetIJKToRASMatrix(matrix)
+    columns, rows = w.cases[w.currentIndex]["columns"], w.cases[w.currentIndex]["rows"]
+    for x in (.3, .4):
+        world = matrix.MultiplyPoint([columns * x, rows * .4, 0, 1])
+        circle.AddControlPointWorld(vtk.vtkVector3d(*world[:3]))
+    check(circle.IsA("vtkMRMLMarkupsShapeNode") and circle.GetShapeName() == circle.Ring
+          and circle.GetNumberOfDefinedControlPoints() == 3 and w.flushSave(),
+          "bundled ExtraMarkups creates and saves a native circle offline")
+    check("直径" in w.markups.labels[w.markups.selected_id].text,
+          "native circle displays its measured diameter")
+    w.deleteMarkupButton.click()
     w.features.qualityChoices.buttons[2].click()
     for slider in w.gradeSliders.values():
         slider.set_value("0/0")

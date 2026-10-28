@@ -90,21 +90,28 @@ def run():
             events()
         w.fitImage()
         events()
-        w.ellipseButton.click()
+        w.circleButton.click()
         mouse(w, [columns * .3, rows * .4, 0])
-        check(w.markups.placing_id is not None, "first corner keeps ellipse placement active")
+        check(w.markups.placing_id is not None, "first endpoint keeps circle placement active")
         mouse(w, [columns * .36, rows * .44, 0])
-        check(w.markups.placing_id is None and w.flushSave(), "two native clicks complete and save an ellipse")
+        check(w.markups.placing_id is None and w.flushSave(), "two native clicks complete and save a circle")
         actual = w.currentRecord["spatial_annotations"][0]
-        check(actual["kind"] == "ellipse" and actual["measurement"]["unit"] == "mm", "ellipse saves physical long and short diameters")
-        node = w.markups.outlines[actual["id"]]
-        check(node.GetNumberOfDefinedControlPoints() == 128, "ellipse has a curved outline with hidden generated vertices")
-        before = actual["measurement"]["long_diameter"]
+        check(actual["kind"] == "circle" and actual["measurement"]["unit"] == "mm", "circle saves its physical diameter")
+        node = w.markups.nodes[actual["id"]]
+        check(node.IsA("vtkMRMLMarkupsShapeNode") and node.GetShapeName() == node.Ring and node.GetRadiusMode() == node.Circumferential, "circle is the actual ExtraMarkups Ring node in diameter mode")
+        check(node.GetNumberOfDefinedControlPoints() == 3 and not node.GetNthControlPointVisibility(2) and node.GetNthControlPointLocked(2), "image-plane point is generated, hidden and locked")
+        before = actual["measurement"]["diameter"]
         mouse(w, actual["points_ijk"][1], [columns * .39, rows * .46, 0])
-        check(w.flushSave() and w.currentRecord["spatial_annotations"][0]["measurement"]["long_diameter"] > before,
-              "dragging an ellipse corner updates its size and persistence")
+        check(w.flushSave() and w.currentRecord["spatial_annotations"][0]["measurement"]["diameter"] > before,
+              "dragging a circle endpoint updates its size and persistence")
         check("mm" in w.markups.labels[actual["id"]].text and w.markups.labels[actual["id"]].isVisible(),
               "size label is visible beside the image annotation")
+        radius = node.GetMeasurement("radius")
+        radius.SetEnabled(True)
+        node.UpdateAllMeasurements()
+        check(abs(radius.GetValue() * 2 - w.currentRecord["spatial_annotations"][0]["measurement"]["diameter"]) < 1e-5,
+              "saved diameter agrees with ExtraMarkups native radius on non-square pixels")
+        radius.SetEnabled(False)
         loader = w._loadVolume
         def inspect_loading(case):
             check(w.busy.dialog is not None and w.busy.dialog.isVisible() and
@@ -122,7 +129,7 @@ def run():
         check(w.currentIndex == 1 and w.busy.dialog is None, "next case unlocks the interface after loading")
         w._loadVolume = loader
         w.previousButton.click()
-        check(w.currentIndex == 0 and len(w.markups.outlines) == 1, "previous case restores ellipse and its measured label")
+        check(w.currentIndex == 0 and len(w.markups.nodes) == 1, "previous case restores circle and its measured label")
         def fail_loading(case):
             raise RuntimeError("synthetic load failure")
         w._loadVolume = fail_loading
@@ -130,7 +137,20 @@ def run():
               "failed loading restores input access and retains the previous case")
         w._loadVolume = loader
         check(w.flushSave(), "annotation remains saveable after a loading failure")
-        point = {"id": str(uuid.uuid4()), "kind": "ellipse", "label": "E1",
+        w.circleButton.click()
+        mouse(w, [columns * .2, rows * .6, 0])
+        w.finishMarkupButton.click()
+        check(w.flushSave() and w.currentRecord["spatial_annotations"][-1]["state"] == "draft",
+              "one-endpoint circle saves as a draft")
+        draft_id = w.currentRecord["spatial_annotations"][-1]["id"]
+        check(w.selectCase(1) and w.selectCase(0), "circle draft survives case switching")
+        w.markups.select(draft_id)
+        w.finishMarkupButton.click()
+        mouse(w, [columns * .25, rows * .6, 0])
+        check(w.flushSave() and w.currentRecord["spatial_annotations"][-1]["state"] == "ready"
+              and w.markups.nodes[draft_id].GetNumberOfDefinedControlPoints() == 3,
+              "restored circle draft resumes into a native circle with its plane constraint")
+        point = {"id": str(uuid.uuid4()), "kind": "circle", "label": "C1",
                  "points_ijk": [[columns * .3, rows * .4, 0], [columns * .36, rows * .44, 0]]}
         polygon = {"id": str(uuid.uuid4()), "kind": "polygon", "label": "R1",
                    "points_ijk": [[columns * x, rows * y, 0] for x, y in ((.6, .5), (.8, .5), (.8, .7), (.6, .7))]}
@@ -144,7 +164,7 @@ def run():
             point_before = w.markups.capture()[1]["points_ijk"][corner]
             mouse(w, point_before, [point_before[0], rows * .65, 0])
         check(w.flushSave() and w.currentRecord["spatial_annotations"][1]["measurement"]["width"] < width_before,
-              "dragging polygon vertices recalculates and saves estimated width")
+              "dragging polygon vertices recalculates and saves width")
         w.store.save(case_id, "reader-02", empty_zones(), spatial_annotations=[dict(point, label="第二位读者")])
         w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-03"))
         check(w.currentReader == "reader-03", "export can start from an unread reader")
@@ -182,7 +202,7 @@ def run():
         first = json.loads((bundle / "reader-01" / (case_id + ".json")).read_text(encoding="utf-8"))
         second = json.loads((bundle / "reader-02" / (case_id + ".json")).read_text(encoding="utf-8"))
         check([s["shape_type"] for s in first["shapes"]] == ["polygon", "polygon"] and len(second["shapes"]) == 1,
-              "each reader has independent ellipse/polygon shapes")
+              "each reader has independent circle/polygon shapes")
         np.testing.assert_allclose(first["shapes"][0]["source_points_ijk"], point["points_ijk"], atol=1e-6, rtol=0)
         check(True, "original pixel coordinates survive GUI export")
         check(w.labelmeExport.button.isEnabled() and w.labelmeExport.temporary is None, "button and temporary job files recover after export")

@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .assets import AssetStore, atomic_bytes
-from .geometry import ellipse_issue, measure, measurement_scale
+from .geometry import circle_issue, measure, measurement_scale
 
 GRADES = ("0/-", "0/0", "0/1", "1/0", "1/1", "1/2", "2/1", "2/2", "2/3", "3/2", "3/3", "3/+")
 ZONES = ("RU", "RM", "RL", "LU", "LM", "LL")
@@ -26,7 +26,7 @@ QUALITY_GRADES = {1: "优片", 2: "良片", 3: "差片", 4: "废片"}
 COORDINATES = {"system": "image_ijk", "units": "pixel", "index_base": 0,
                "axes": ["column", "row", "slice"], "origin": "center of top-left stored pixel",
                "polygon": "ordered vertices; last vertex connects to first",
-               "ellipse": "two opposite bounding-box corners; axes parallel to stored image axes"}
+               "circle": "two diameter endpoints; circle in the measurement plane defined by image.measurement_scale"}
 
 
 def utc_now():
@@ -123,7 +123,7 @@ def polygon_issue(points):
 
 
 def shape_issue(kind, points):
-    return ellipse_issue(points) if kind == "ellipse" else polygon_issue(points)
+    return circle_issue(points) if kind == "circle" else polygon_issue(points)
 
 
 def validate_spatial(annotations, image, complete=False):
@@ -137,11 +137,11 @@ def validate_spatial(annotations, image, complete=False):
             raise ValueError("空间标注编号重复。")
         ids.add(identifier)
         kind, label = annotation["kind"], str(annotation["label"]).strip()
-        if kind not in ("ellipse", "polygon") or not label or len(label) > 80:
+        if kind not in ("circle", "polygon") or not label or len(label) > 80:
             raise ValueError("标注类型无效，或名称为空 / 超过 80 字。")
         positions = annotation["points_ijk"]
-        if not positions or (kind == "ellipse" and len(positions) > 2):
-            raise ValueError("椭圆最多有两个对角控制点；区域草稿至少需要一个顶点。")
+        if not positions or (kind == "circle" and len(positions) > 2):
+            raise ValueError("圆形最多有两个直径端点；区域草稿至少需要一个顶点。")
         points = []
         for position in positions:
             if len(position) != 3 or not all(math.isfinite(float(v)) for v in position):
@@ -294,8 +294,8 @@ class AnnotationStore:
         row = self.connection.execute("SELECT payload_json, updated_at FROM annotations WHERE case_id=? AND reader_id=?", (case_id, reader)).fetchone()
         if row:
             value = json.loads(row[0])
-            if any(s["kind"] not in ("ellipse", "polygon") for s in value.get("spatial_annotations", [])):
-                raise ValueError("此病例含旧版点标注，无法当作椭圆读取。请使用独立的新标注项目；旧数据仍保留。")
+            if any(s["kind"] not in ("circle", "polygon") for s in value.get("spatial_annotations", [])):
+                raise ValueError("此病例含不支持的旧版标注，无法当作圆形读取。请使用独立的新标注项目；旧数据仍保留。")
             value.setdefault("spatial_annotations", [])
             value.setdefault("quality", {"grade": None, "reason": ""})
             value.setdefault("partition", None)
@@ -304,7 +304,7 @@ class AnnotationStore:
                 value["status"] = "draft"
             value["updated_at"] = row[1]
             return value
-        return {"schema_version": 5, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
+        return {"schema_version": 6, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
                 "zones": empty_zones(), "spatial_annotations": [], "quality": {"grade": None, "reason": ""},
                 "partition": None, "audio": [], "status": "draft", "display": {}, "updated_at": None}
 
@@ -335,7 +335,7 @@ class AnnotationStore:
                 raise ValueError("分区不对应当前原始胸片，已停止保存。")
             if partition["state"] == "confirmed" and partition.get("confirmed_by") != reader:
                 raise ValueError("分区确认不属于当前读者，请由当前读者重新确认。")
-        payload = {"schema_version": 5, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
+        payload = {"schema_version": 6, "standard": STANDARD, "case_id": case_id, "reader_id": reader,
                    "zones": zones, "status": status, "display": display or {},
                    "image": image, "spatial_annotations": spatial, "quality": quality,
                    "partition": partition, "audio": audio}
@@ -420,7 +420,7 @@ class AnnotationStore:
                 records = [self.get(case_id, reader) for case_id in case_ids]
                 for record in records:
                     record["image"] = dimensions[record["case_id"]]
-                packages.append({"schema_version": 5, "standard": STANDARD, "exported_at": exported_at, "reader_id": reader,
+                packages.append({"schema_version": 6, "standard": STANDARD, "exported_at": exported_at, "reader_id": reader,
                                  "coordinate_system": COORDINATES, "grade_codes": GRADE_CODES, "zone_names": ZONE_NAMES,
                                  "quality_grades": QUALITY_GRADES, "records": records, "history": histories.get(reader, [])})
         return {"packages": packages, "images": images, "sources": sources}
@@ -492,7 +492,7 @@ class AnnotationStore:
                        "audio_count": len(record["audio"]), "audio_paths": "|".join(a["path"] for a in record["audio"])}
                 writer.writerow({key: csv_safe(value) for key, value in row.items()})
         spatial_buffer = io.StringIO(newline="")
-        spatial_fields = ["case_id", "reader_id", "annotation_id", "kind", "label", "state", "vertex_index", "i", "j", "k", "columns", "rows", "measurement_method", "measurement_unit", "long_diameter", "short_diameter", "width", "spacing_source"]
+        spatial_fields = ["case_id", "reader_id", "annotation_id", "kind", "label", "state", "vertex_index", "i", "j", "k", "columns", "rows", "measurement_method", "measurement_unit", "diameter", "width", "spacing_source"]
         spatial_writer = csv.DictWriter(spatial_buffer, fieldnames=spatial_fields)
         spatial_writer.writeheader()
         for record in records:
@@ -505,7 +505,7 @@ class AnnotationStore:
                            "i": point[0], "j": point[1], "k": point[2],
                            "columns": record["image"]["columns"], "rows": record["image"]["rows"]}
                     row.update(measurement_method=size.get("method", ""), measurement_unit=size.get("unit", ""),
-                               long_diameter=size.get("long_diameter", ""), short_diameter=size.get("short_diameter", ""),
+                               diameter=size.get("diameter", ""),
                                width=size.get("width", ""), spacing_source=size.get("source", ""))
                     spatial_writer.writerow({key: csv_safe(value) for key, value in row.items()})
         images_buffer = io.StringIO(newline="")

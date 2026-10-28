@@ -118,7 +118,7 @@ def run():
         check(list(red.mrmlSliceNode().GetXYZOrigin()) != origin or str(red.mrmlSliceNode().GetSliceToRAS()) != matrix,
               "native middle-button dragging pans the radiograph in transform mode")
         bar.fitButton.click()
-        w.ellipseButton.click()
+        w.circleButton.click()
         check(not bar.transformButton.isChecked() and not bar.windowLevelButton.isChecked(), "placing a point clears both viewing-mode indicators")
         bar.windowLevelButton.click()
         check(w.markups.placing_id is None and not w.markups.nodes, "returning to a viewing tool safely cancels an unplaced point")

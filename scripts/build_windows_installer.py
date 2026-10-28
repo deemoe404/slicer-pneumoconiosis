@@ -93,6 +93,11 @@ def main():
     subprocess.run('"' + str(slicer_installer) + '" /S /D=' + str(PAYLOAD / "Slicer"), check=True, timeout=600)
     if not (PAYLOAD / "Slicer/Slicer.exe").is_file():
         raise RuntimeError("The official Slicer installer did not create the expected application.")
+    from prepare_markups import prepare as prepare_markups
+    extension = prepare_markups(PAYLOAD / "extensions/ExtraMarkups", "win-amd64")
+    metadata["extra_markups"] = json.loads((extension / "package.json").read_text(encoding="utf-8"))
+    if metadata["extra_markups"]["slicer_revision"] != INPUTS["slicer"]["revision"]:
+        raise RuntimeError("ExtraMarkups and Slicer revisions must match.")
     # The outer installer owns installation/uninstallation of the entire application.
     for path in (PAYLOAD / "Slicer").glob("Uninstall*.exe"):
         path.unlink()
@@ -142,6 +147,8 @@ def main():
                                  for d in sorted(importlib.metadata.distributions(), key=lambda d: d.metadata["Name"].lower())]
     notices = "Third-party notices\n\nThe project BSD-3-Clause license covers original code and documentation only.\n"
     notices += "Slicer and its component licenses are retained in Slicer/.\nPython's license is retained in runtime/python/.\n"
+    notices += "ExtraMarkups by Saleem Edah-Tally provides the Shape circle tool (CeCILL-B).\n"
+    notices += "Source: https://github.com/chir-set/SlicerExtraMarkups/tree/f5c833b\nLicense and package provenance: extensions/ExtraMarkups/.\n"
     notices += "Chinese translation sources, upstream URLs/checksums and licenses are retained in PneumoconiosisAnnotator/Resources/Translations/.\n"
     notices += "Python dependency license files are retained in runtime/python/Lib/site-packages, including *.dist-info/licenses.\n"
     notices += "Model source: " + WEIGHTS_URL + "\nModel SHA256: " + WEIGHTS_SHA256 + "\n\n"

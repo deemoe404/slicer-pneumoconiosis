@@ -14,7 +14,7 @@
 
 根目录名为 `YYYYMMDD-HHMMSS-ffffff`，不含产品前缀或读者编号，内部按 `reader-01` 等读者编号分子目录。目录时间使用导出机器本地时间；JSON 的导出、保存及确认时间使用带时区的 ISO 8601 UTC 字符串，各读者的 `exported_at` 相同。
 
-只纳入在当前病例列表的当前记录或修改历史中有实际阅片内容的读者：六区任一区已评分 / 不可评价，质量等级或缺陷说明非空，有椭圆 / 多边形标注、录音，或分区状态为 `edited` / `confirmed`。显示参数和空草稿不作为参与依据，只有 `pending_review` 的机器分区也不算。历史中的真实标注即使已从当前记录移除，仍保留该读者用于追溯。仅在当前病例列表之外有标注的读者不纳入；无人参与时导出报错，不发布空目录。
+只纳入在当前病例列表的当前记录或修改历史中有实际阅片内容的读者：六区任一区已评分 / 不可评价，质量等级或缺陷说明非空，有圆形 / 多边形标注、录音，或分区状态为 `edited` / `confirmed`。显示参数和空草稿不作为参与依据，只有 `pending_review` 的机器分区也不算。历史中的真实标注即使已从当前记录移除，仍保留该读者用于追溯。仅在当前病例列表之外有标注的读者不纳入；无人参与时导出报错，不发布空目录。
 
 以下路径均相对于各自的读者子目录；`<reader_id>` 与子目录同名：
 
@@ -22,7 +22,7 @@
 | --- | --- |
 | `<reader_id>.csv` | 该读者当前评分表，每病例固定六行，包含草稿和未评病例 |
 | `<reader_id>-images.csv` | 当前病例与原始胸片的对照表，每病例一行，包含未评病例 |
-| `<reader_id>-spatial.csv` | 该读者当前椭圆 / 多边形顶点表；每个椭圆控制点或多边形顶点一行，无标注时仅有表头 |
+| `<reader_id>-spatial.csv` | 该读者当前圆形 / 多边形顶点表；每个圆形控制点或多边形顶点一行，无标注时仅有表头 |
 | `<reader_id>.json` | 该读者完整当前记录、修改历史及格式字典 |
 | `assets/audio/<case_id>/<reader_id>/<clip_id>.wav` | 当前记录或历史引用的语音 |
 | `assets/masks/<sha256>.npz` | 当前记录或历史引用的初始 / 修订肺野掩膜 |
@@ -50,7 +50,7 @@
 
 | 字段 | 含义 |
 | --- | --- |
-| `schema_version` | 整数 `5` |
+| `schema_version` | 整数 `6` |
 | `standard` | 实现采用的参考规范标识：`GBZ 70-2015 + amendment 1` |
 | `exported_at` | 导出时间 |
 | `reader_id` | 该 JSON 对应的读者 |
@@ -73,7 +73,7 @@
 | `image` | 原图 `columns`、`rows`（像素）及 `measurement_scale` 尺度信息 |
 | `zones` | 六区评价，见下表 |
 | `quality` | 整片质量对象 |
-| `spatial_annotations` | 椭圆 / 多边形数组，允许为空 |
+| `spatial_annotations` | 圆形 / 多边形数组，允许为空 |
 | `partition` | 分区对象；未生成时为 `null` |
 | `audio` | 录音对象数组，允许为空 |
 | `display` | 随标注保存的显示状态；可以是空对象 |
@@ -132,15 +132,15 @@ JSON 保留 `0/1` 等原始字符串；CSV 使用 `P0_1`，防止表格软件转
 | 字段 | 含义 |
 | --- | --- |
 | `id` | 稳定 UUID，不能用列表行号代替 |
-| `kind` | `ellipse` 或 `polygon` |
+| `kind` | `circle` 或 `polygon` |
 | `label` | 非空名称，最多 80 字 |
 | `state` | `ready` 或 `draft`，由几何有效性计算 |
-| `points_ijk` | 椭圆为外接框的两个对角；多边形为有序 `[i, j, k]` 顶点数组 |
+| `points_ijk` | 圆形为直径的两个端点；多边形为有序 `[i, j, k]` 顶点数组 |
 | `measurement` | 草稿为 null；有效标注包含方法、单位、间距来源和尺寸值 |
 
 坐标为**原始存储图像的零基像素中心**：I 是列、J 是行、K 固定为 0。左上像素中心是 `[0, 0, 0]`，右下像素中心是 `[columns-1, rows-1, 0]`。允许小数，保存精度为小数点后六位；边界范围含半像素外缘，即 I 在 `[-0.5, columns-0.5]`、J 在 `[-0.5, rows-0.5]`。显示的缩放、平移和窗宽窗位不改变该坐标系统。
 
-椭圆由外接框的两个对角定义；两条轴均非零时为 ready，只有一个角或轴长为零时为 draft。多边形按顶点顺序保存，末点自动连首点，首点不重复写入；矩形也是多边形。至少三个不同顶点、无交叉 / 重叠边且面积非零时为 `ready`；几何不完整时可保存 `draft`，但阻止完成病例。鼠标移动预览点不属于顶点列表。
+圆形由直径的两个不同端点定义，圆心为中点；只有一个端点或两端重合时为 draft。原生 ExtraMarkups Ring 使用 Circumferential 模式，第三个确定平面的点由程序生成并隐藏，不进入标注数据。多边形按顶点顺序保存，末点自动连首点，首点不重复写入；矩形也是多边形。至少三个不同顶点、无交叉 / 重叠边且面积非零时为 `ready`；几何不完整时可保存 `draft`，但阻止完成病例。鼠标移动预览点不属于顶点列表。
 
 这些矢量轮廓与肺野掩膜、六区分界是独立对象，不自动生成解剖区域分割；几何尺寸及尺度来源随 measurement 保存。
 
@@ -191,24 +191,24 @@ partition_state,audio_count,audio_paths,updated_at
 
 ```text
 case_id,reader_id,annotation_id,kind,label,state,vertex_index,i,j,k,columns,rows,
-measurement_method,measurement_unit,long_diameter,short_diameter,width,spacing_source
+measurement_method,measurement_unit,diameter,width,spacing_source
 ```
 
 `vertex_index` 从 0 开始；以病例、读者、标注 ID 分组，再按该列恢复顶点顺序。分区定位点不在这个 CSV 中，须读取 JSON 的 `partition.landmarks`。
 
 ## 自动尺寸
 
-JSON schema_version=5。椭圆 `kind=ellipse`，两个对角控制点确定与原图行列平行的外接框；对应轴长乘以列 / 行间距后，从大到小保存为 `measurement.long_diameter` / `short_diameter`，方法为 `ellipse_axes`。多边形方法 `minimum_feret`，`width` 为经尺度变换的轮廓凸包的最小卡尺宽度。使用 SciPy ConvexHull，包含凹形轮廓、旋转和非等距像素。
+JSON schema_version=6。圆形 `kind=circle`，两个端点的 I/J 差分别乘以列 / 行间距，再计算欧氏距离，保存为 `measurement.diameter`，方法为 `circle_diameter`。圆形定义在该尺度对应的图像平面，Slicer 原生圆形与该尺度保持一致。多边形方法 `minimum_feret`，`width` 为经尺度变换的轮廓凸包的最小卡尺宽度。使用 SciPy ConvexHull，包含凹形轮廓、旋转和非等距像素。
 
-`image.measurement_scale` 和每个有效标注的 `measurement` 记录 `unit`、`spacing=[column,row]`、`source`、`calibration`。优先 PixelSpacing；其次 ImagerPixelSpacing（显示为探测器尺度）；无有效间距则 `[1,1]` / px。PixelSpacingCalibrationType 仅记录，不推测校准情况。数值由几何重新计算，未完成或无效轮廓的 measurement 为 null。CSV 在每个控制点行重复方法、单位、长径、短径、宽度和间距来源。测量是影像上的几何量，不自动生成小阴影分类或诊断。
+`image.measurement_scale` 和每个有效标注的 `measurement` 记录 `unit`、`spacing=[column,row]`、`source`、`calibration`。优先 PixelSpacing；其次 ImagerPixelSpacing（显示为探测器尺度）；无有效间距则 `[1,1]` / px。PixelSpacingCalibrationType 仅记录，不推测校准情况。数值由几何重新计算，未完成或无效轮廓的 measurement 为 null。CSV 在每个控制点行重复方法、单位、直径、宽度和间距来源。测量是影像上的几何量，不自动生成小阴影分类或诊断。
 
 ## LabelMe 独立导出
 
 「导出 LabelMe」使用独立目录，不向普通研究导出包添加文件。根目录为 `YYYYMMDD-HHMMSS-ffffff`，读者子目录中的每张图像有一组同名 `<case_id>.png` 和 `<case_id>.json`，根目录另有 `export-report.json`。读者参与规则与普通导出相同；只转换当前记录，不转换修改历史。
 
-每图 JSON 的 LabelMe 字段为 `version`（兼容目标 `7.9.1`）、`flags`、`shapes`、`imagePath`、`imageData`、`imageHeight`、`imageWidth`。`imagePath` 是同目录 PNG 文件名，`imageData=null`。椭圆以 128 点多边形近似，额外保留 `source_kind=ellipse` 和两个对角 `source_points_ijk`；普通多边形保留原顶点。每个形状均附 `measurement`。每个形状包含原标签 `label`、二维原图坐标 `points`、`shape_type=polygon`、`group_id=null`、`flags={}`、`description=""` 和 `mask=null`。扩展字段 `case_id`、`reader_id` 与每形状 `annotation_id` 用于追溯；它们不是 LabelMe 的评分语义。
+每图 JSON 的 LabelMe 字段为 `version`（兼容目标 `7.9.1`）、`flags`、`shapes`、`imagePath`、`imageData`、`imageHeight`、`imageWidth`。`imagePath` 是同目录 PNG 文件名，`imageData=null`。正方形像素上的圆形导出为 `shape_type=circle`，`points` 为圆心和圆周一点。非正方形像素上的物理圆在原图像素坐标中呈椭圆，导出为 `shape_type=polygon` 的 128 点轮廓，保持原始 PNG 尺寸和几何对应；额外保留 `source_kind=circle` 和直径两端 `source_points_ijk`。普通多边形导出为 `polygon` 并保留原顶点。每个形状均附 `measurement`。每个形状包含原标签 `label`、二维原图坐标 `points`、`group_id=null`、`flags={}`、`description=""` 和 `mask=null`。扩展字段 `case_id`、`reader_id` 与每形状 `annotation_id` 用于追溯；它们不是 LabelMe 的评分语义。
 
-`flags.case_complete` 表示本项目的病例完成状态，`flags.has_skipped_shapes` 表示存在未转换的轮廓。有效形状保留顶点顺序和小数坐标，I/J 映射到 x/y，K=0 不写入；无效椭圆或多边形的 ID、标签及原因保存在报告 `records[].skipped_shapes`。空形状列表不代表阴性；仅有评分、没有空间标注的病例也可能为空。
+`flags.case_complete` 表示本项目的病例完成状态，`flags.has_skipped_shapes` 表示存在未转换的轮廓。有效形状保留顶点顺序和小数坐标，I/J 映射到 x/y，K=0 不写入；无效圆形或多边形的 ID、标签及原因保存在报告 `records[].skipped_shapes`。空形状列表不代表阴性；仅有评分、没有空间标注的病例也可能为空。
 
 PNG 是保持 `(rows, columns)` 和存储像素顺序的 8 位灰度查看图，不缩放、裁剪或翻转像素，不嵌入 DICOM 标签。转换复用本项目的 DICOM 显示读取：先应用 Modality LUT / rescale，再应用首个 VOI LUT 或窗宽窗位；没有 VOI 时用图像范围归一化，MONOCHROME1 反相。所有读者使用相同图像，不使用读者的显示设置。转换读取的原片字节必须与导入时 SHA256 相符；不能解码时直接报错，不生成占位图。PNG 不保留 DICOM 完整灰度或物理像素间距的显示比例。
 
@@ -225,11 +225,11 @@ import numpy as np
 
 bundle = Path("导出文件夹") / "reader-01"
 data = json.loads(next(bundle.glob("*.json")).read_text(encoding="utf-8"))
-if data["schema_version"] != 5:
+if data["schema_version"] != 6:
     raise ValueError("不支持的导出封装版本")
 
 for record in data["records"]:
-    if record["schema_version"] != 5:
+    if record["schema_version"] != 6:
         raise ValueError("不支持的记录版本")
     print(record["case_id"], record["quality"]["grade"], record["zones"]["RU"])
     if record["partition"] is not None:

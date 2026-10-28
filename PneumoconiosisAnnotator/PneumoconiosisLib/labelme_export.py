@@ -14,7 +14,7 @@ from PIL import Image
 
 from .assets import atomic_bytes
 from .core import atomic_write, shape_issue, validate_reader, validate_spatial
-from .geometry import ellipse_contour
+from .geometry import circle_contour, circle_geometry
 from .references import read_reference
 
 LABELME_VERSION = "7.9.1"
@@ -50,9 +50,18 @@ def label_file(record):
             skipped.append({"annotation_id": annotation["id"], "label": annotation["label"],
                             "reason": shape_issue(annotation["kind"], annotation["points_ijk"])})
             continue
-        points = ellipse_contour(annotation["points_ijk"]) if annotation["kind"] == "ellipse" else annotation["points_ijk"]
+        points, shape_type = annotation["points_ijk"], "polygon"
+        if annotation["kind"] == "circle":
+            center, radii = circle_geometry(points, record["image"])
+            if np.isclose(radii[0], radii[1], rtol=1e-9, atol=0):
+                # LabelMe circles store a center and one circumference point.
+                points, shape_type = [center.tolist(), points[1][:2]], "circle"
+            else:
+                # Keep the original raster unchanged. Physical circles span unequal
+                # pixel radii on anisotropic images, so use a contour in LabelMe.
+                points = circle_contour(points, record["image"])
         shapes.append({"label": annotation["label"], "points": [p[:2] for p in points],
-                       "group_id": None, "description": "", "shape_type": "polygon",
+                       "group_id": None, "description": "", "shape_type": shape_type,
                        "flags": {}, "mask": None, "annotation_id": annotation["id"],
                        "source_kind": annotation["kind"], "source_points_ijk": annotation["points_ijk"],
                        "measurement": annotation["measurement"]})
@@ -79,7 +88,7 @@ def export_labelme(destination, snapshot, progress=None):
     completed = 0
     report = {"schema_version": 1, "format": "labelme", "labelme_version": LABELME_VERSION,
               "exported_at": packages[0]["exported_at"], "readers": readers,
-              "scope": "current ellipses (128-vertex polygons) and polygons; no lung masks or history",
+              "scope": "current circles and polygons; circles on non-square pixels use 128-vertex polygons; no lung masks or history",
               "empty_shapes_mean": "no exported spatial shapes; not a negative diagnosis",
               "images": [], "records": []}
     first = temporary / readers[0]

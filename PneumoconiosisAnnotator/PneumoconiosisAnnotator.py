@@ -40,7 +40,7 @@ class PneumoconiosisAnnotator(ScriptedLoadableModule):
         super().__init__(parent)
         self.parent.title = "尘肺胸片标注"
         self.parent.categories = ["Research"]
-        self.parent.dependencies = ["DICOM", "Volumes", "Colors", "Markups", "Segmentations", "SegmentEditor"]
+        self.parent.dependencies = ["DICOM", "Volumes", "Colors", "Markups", "Shape", "Segmentations", "SegmentEditor"]
         self.parent.contributors = ["SUEP CT Research"]
         self.parent.helpText = "整片质量、六区评分、语音录音和医生可修正的自动肺野分区。原图只读，标注自动保存到本地。"
         self.parent.acknowledgementText = "基于 3D Slicer 的科研标注模块。"
@@ -212,13 +212,13 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.spatialGroup = spatial
         spatial_layout = qt.QVBoxLayout(spatial)
         tools = qt.QVBoxLayout()
-        self.ellipseButton = qt.QPushButton("标注圆形小阴影：按直径")
+        self.circleButton = qt.QPushButton("标注圆形小阴影：按直径")
         self.regionButton = qt.QPushButton("不规则形小阴影：按宽度")
         self.finishMarkupButton = qt.QPushButton("结束绘制")
-        self.ellipseButton.connect("clicked()", lambda: self.markups.start("ellipse"))
+        self.circleButton.connect("clicked()", lambda: self.markups.start("circle"))
         self.regionButton.connect("clicked()", lambda: self.markups.start("polygon"))
         self.finishMarkupButton.connect("clicked()", self.finishOrContinueMarkup)
-        for button in (self.ellipseButton, self.regionButton, self.finishMarkupButton):
+        for button in (self.circleButton, self.regionButton, self.finishMarkupButton):
             tools.addWidget(button)
         spatial_layout.addLayout(tools)
         self.markupList = qt.QListWidget()
@@ -239,7 +239,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
         self.deleteMarkupButton.connect("clicked()", self.deleteMarkup)
         selection.addWidget(self.deleteMarkupButton)
         spatial_layout.addLayout(selection)
-        self.spatialHint = qt.QLabel("椭圆：点选外接框两个对角；多边形：依次点选边界，右键结束。\n拖动控制点可调整，大小随之更新。")
+        self.spatialHint = qt.QLabel("圆形：点选直径两端；多边形：依次点选边界，右键结束。\n拖动控制点可调整，大小随之更新。")
         self.spatialHint.setWordWrap(True)
         self.spatialHint.setStyleSheet("color:#7d8899; font-size:11px;")
         spatial_layout.addWidget(self.spatialHint)
@@ -426,6 +426,8 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             if list(dimensions) != [case["columns"], case["rows"], 1]:
                 raise ValueError("读取尺寸与原始胸片不一致。")
             created.SetName(case["case_id"])
+            # Use the same image-plane metric for native circles and saved measurements.
+            created.SetSpacing(*case["measurement_scale"]["spacing"], created.GetSpacing()[2])
             # GDCM may already invert MONOCHROME1. Inspect pixels before selecting a display LUT.
             ds = pydicom.dcmread(case["file_path"])
             display = created.GetDisplayNode()
@@ -558,7 +560,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
                 draft = record is not None and shape_issue(kind, record["points_ijk"])
                 suffix = " · 草稿" if draft else (" · 待放置" if count == 0 else "")
                 size = measurement_text(measure(kind, record["points_ijk"], self.cases[self.currentIndex])) if record and not draft else ""
-                text = ("椭圆 · " if kind == "ellipse" else "多边形 · ") + node.GetName() + suffix + (" · " + size if size else "")
+                text = ("圆形 · " if kind == "circle" else "多边形 · ") + node.GetName() + suffix + (" · " + size if size else "")
                 item = self.markupList.item(row)
                 item.setText(text)
                 item.setToolTip(text)
@@ -575,7 +577,7 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             selected = self.markups.nodes.get(self.markups.selected_id)
             placing = bool(self.markups.placing_id)
             active = self.volume is not None and self.currentRecord is not None
-            self.ellipseButton.setEnabled(active)
+            self.circleButton.setEnabled(active)
             self.regionButton.setEnabled(active)
             self.markupList.setEnabled(active and bool(self.markups.nodes))
             self.deleteMarkupButton.setEnabled(active and selected is not None)
@@ -586,9 +588,9 @@ class PneumoconiosisAnnotatorWidget(ScriptedLoadableModuleWidget):
             self.finishMarkupButton.setEnabled(active and (placing or (selected is not None and
                 (selected.GetAttribute("PneumoconiosisKind") == "polygon" or selected.GetNumberOfDefinedControlPoints() < 2))))
             if placing:
-                self.spatialHint.setText("椭圆：点选外接框两个对角；多边形：依次点选边界，右键结束。")
+                self.spatialHint.setText("圆形：点选直径两端；多边形：依次点选边界，右键结束。")
             else:
-                self.spatialHint.setText("椭圆：点选外接框两个对角；多边形：依次点选边界，右键结束。\n拖动控制点可调整，大小随之更新。")
+                self.spatialHint.setText("圆形：点选直径两端；多边形：依次点选边界，右键结束。\n拖动控制点可调整，大小随之更新。")
         finally:
             self.spatialUpdating = False
         self.updateCompletionControls()

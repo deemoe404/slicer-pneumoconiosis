@@ -78,30 +78,30 @@ try:
     w.fitImage()
     events()
     first_id = w.cases[0]["case_id"]
-    w.ellipseButton.click()
+    w.circleButton.click()
     w.deleteMarkupButton.click()
-    check(not w.markups.nodes and not w.spatialState, "cancel or delete an unplaced ellipse leaves no phantom annotation")
-    w.ellipseButton.click()
+    check(not w.markups.nodes and not w.spatialState, "cancel or delete an unplaced circle leaves no phantom annotation")
+    w.circleButton.click()
     mouse(w, [1600, 1100, 0])
     mouse(w, [1800, 1300, 0])
     events(0.55)
     point = w.store.get(first_id, "reader-01")["spatial_annotations"]
-    check(len(point) == 1 and point[0]["kind"] == "ellipse", "native mouse clicks place an ellipse and autosaves")
-    check(w.spatialGroup.property("completionState") == "ready", "a placed ellipse satisfies the spatial completion requirement")
+    check(len(point) == 1 and point[0]["kind"] == "circle", "native mouse clicks place a circle and autosaves")
+    check(w.spatialGroup.property("completionState") == "ready", "a placed circle satisfies the spatial completion requirement")
     point_id = point[0]["id"]
     check(w.markupList.count == 1 and w.markupList.currentItem().data(qt.Qt.UserRole) == point_id,
-          "a placed ellipse appears as a selected row in the flat list")
+          "a placed circle appears as a selected row in the flat list")
     check(max(abs(a - b) for a, b in zip(point[0]["points_ijk"][0], [1600, 1100, 0])) < 4,
           "mouse placement exports original raster pixel coordinates")
-    check(w.markups.placing_id is None, "two-corner ellipse placement returns to normal interaction")
+    check(w.markups.placing_id is None, "two-endpoint circle placement returns to normal interaction")
     mouse(w, point[0]["points_ijk"][0], end=[1700, 1200, 0])
     events(0.55)
     moved = w.store.get(first_id, "reader-01")["spatial_annotations"][0]
     check(max(abs(a - b) for a, b in zip(moved["points_ijk"][0], [1700, 1200, 0])) < 4,
-          "native mouse drag changes ellipse corner and autosaves")
-    w.renameMarkup("QA_ELLIPSE")
+          "native mouse drag changes circle endpoint and autosaves")
+    w.renameMarkup("QA_CIRCLE")
     events(0.55)
-    check(w.store.get(first_id, "reader-01")["spatial_annotations"][0]["label"] == "QA_ELLIPSE", "renaming an ellipse autosaves")
+    check(w.store.get(first_id, "reader-01")["spatial_annotations"][0]["label"] == "QA_CIRCLE", "renaming a circle autosaves")
     w.regionButton.click()
     for position in ([600, 650, 0], [1000, 650, 0], [1100, 1100, 0], [650, 1250, 0]):
         mouse(w, position)
@@ -114,16 +114,16 @@ try:
     region_id = records[1]["id"]
     w.renameMarkup("QA_REGION")
     events(0.55)
-    check(w.markupList.count == 2 and "QA_ELLIPSE" in w.markupList.item(0).text() and "QA_REGION" in w.markupList.item(1).text(),
-          "ellipse and polygon names are visible together without opening a dropdown")
+    check(w.markupList.count == 2 and "QA_CIRCLE" in w.markupList.item(0).text() and "QA_REGION" in w.markupList.item(1).text(),
+          "circle and polygon names are visible together without opening a dropdown")
     click_list_row(w, 0)
-    check(w.markups.selected_id == point_id and w.markupNameEdit.text == "QA_ELLIPSE", "native list click selects the ellipse and its rename field")
+    check(w.markups.selected_id == point_id and w.markupNameEdit.text == "QA_CIRCLE", "native list click selects the circle and its rename field")
     click_list_row(w, 1)
     check(w.markups.selected_id == region_id and w.markupNameEdit.text == "QA_REGION", "native list click selects the polygon independently")
     expected = w.store.get(first_id, "reader-01")["spatial_annotations"]
     check(w.selectCase(1) and w.markups.capture() == [], "switching case removes previous image's spatial nodes")
     check(w.markupList.count == 0, "switching to an unannotated case clears the flat list")
-    check(w.selectCase(0) and len(w.markups.capture()) == 2, "switching back restores ellipse and polygon")
+    check(w.selectCase(0) and len(w.markups.capture()) == 2, "switching back restores circle and polygon")
     check(w.markups.capture()[0]["points_ijk"] == expected[0]["points_ijk"] and
           w.markups.capture()[1]["points_ijk"] == expected[1]["points_ijk"], "IJK to RAS round trip preserves coordinates after reloading DICOM")
     w.readerCombo.setCurrentIndex(w.readerCombo.findData("reader-02"))
@@ -161,7 +161,7 @@ try:
     paths = [bundle / (w.currentReader + suffix) for suffix in (".csv", ".json", "-spatial.csv", "-images.csv")]
     package = json.loads(paths[1].read_text())
     vertices = list(csv.DictReader(paths[2].read_text(encoding="utf-8-sig").splitlines()))
-    check(len(vertices) == 5, "separate coordinate CSV contains both ellipse corners and all three polygon vertices")
+    check(len(vertices) == 5, "separate coordinate CSV contains both circle endpoints and all three polygon vertices")
     check(len(package["records"][0]["spatial_annotations"]) == 2 and package["coordinate_system"]["index_base"] == 0,
           "JSON includes shapes, image dimensions, zero-based pixel axes and revision history")
     check("file_path" not in paths[1].read_text() and "sop_uid" not in paths[1].read_text(), "spatial export excludes source file paths and raw DICOM identifiers")
@@ -169,7 +169,7 @@ try:
     check(all(file_sha256(c["file_path"]) == c["source_sha256"] for c in w.cases), "spatial drawing and dragging leave all 11 source DICOM files unchanged")
     # No clinical grades are invented for the preview.
     events(0.2)
-    check(window.grab().save(str(OUT / "spatial-preview.png")), "capture real Slicer ellipse and polygon annotation UI")
+    check(window.grab().save(str(OUT / "spatial-preview.png")), "capture real Slicer circle and polygon annotation UI")
     REPORT["expected"] = w.currentRecord["spatial_annotations"]
     REPORT["success"] = True
 except Exception:

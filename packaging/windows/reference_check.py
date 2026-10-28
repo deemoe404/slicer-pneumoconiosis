@@ -138,7 +138,7 @@ def check_reference_view(w, output, check, events):
     check(ref.volume.GetID() == volume_id and right.mrmlSliceCompositeNode().GetBackgroundVolumeID() == volume_id,
           "loading and switching DICOM cases does not replace the displayed standard")
 
-    w.ellipseButton.click()
+    w.circleButton.click()
     node = w.markups.nodes[w.markups.selected_id]
     view = right.sliceView()
     point = qt.QPoint(view.width // 2, view.height // 2)

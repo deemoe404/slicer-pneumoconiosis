@@ -17,4 +17,5 @@ if sys.platform in ("win32", "linux"):
     subprocess.run([str(python), "-m", "pip", "install", "torch==2.14.1", "torchvision==0.29.1",
                     "--index-url", "https://download.pytorch.org/whl/cpu", "--no-deps", *constraints], check=True)
 subprocess.run([str(python), "-m", "pip", "install", "-r", str(ROOT / "requirements-runtime.txt"), *constraints], check=True)
+subprocess.run([str(python), str(ROOT / "scripts" / "prepare_markups.py")], check=True)
 subprocess.run([str(python), str(ROOT / "scripts" / "prepare_model.py")], check=True)

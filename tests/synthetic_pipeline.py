@@ -87,7 +87,7 @@ def restore_and_export(directory):
     paths = [bundle / (reader + suffix) for suffix in (".csv", ".json", "-spatial.csv", "-images.csv")]
     text = paths[1].read_text(encoding="utf-8")
     package = json.loads(text)
-    check(package["schema_version"] == 5 and len(package["records"]) == 1 and len(package["history"]) == 2,
+    check(package["schema_version"] == 6 and len(package["records"]) == 1 and len(package["history"]) == 2,
           "JSON contains the current record and both saved revisions", checks)
     exported = copy.deepcopy(package["records"][0])
     reference = exported["partition"].pop("zone_map")
@@ -185,7 +185,7 @@ def run(output, report):
             raise AssertionError("Unconfirmed partition was incorrectly accepted as complete")
         partition.update(state="confirmed", confirmed_at=utc_now(), confirmed_by="reader-01")
         rows, columns = decoded.shape
-        spatial = [{"id": uuid.uuid4().hex, "kind": "ellipse", "label": "演示椭圆", "points_ijk": [[columns * .3, rows * .4, 0], [columns * .36, rows * .44, 0]]},
+        spatial = [{"id": uuid.uuid4().hex, "kind": "circle", "label": "演示圆形", "points_ijk": [[columns * .3, rows * .4, 0], [columns * .36, rows * .44, 0]]},
                    {"id": uuid.uuid4().hex, "kind": "polygon", "label": "演示区域",
                     "points_ijk": [[columns * i, rows * j, 0] for i, j in ((.60, .52), (.75, .53), (.74, .66), (.59, .65))]}]
         audio = WaveRecording(project, cases[0]["case_id"], "reader-01", 16000)

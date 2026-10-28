@@ -49,7 +49,7 @@ def start():
                   "interface_language": "zh_CN", "selected_module": slicer.util.selectedModule(),
                   "ready": widget.currentIndex >= 0, "case_count": len(widget.cases),
                   "slicer": slicer.app.applicationVersion, "current_reader": widget.currentReader,
-                  "spatial_tools_ready": widget.ellipseButton.isEnabled() and widget.regionButton.isEnabled(),
+                  "spatial_tools_ready": widget.circleButton.isEnabled() and widget.regionButton.isEnabled(),
                   "quality_control_ready": widget.features.qualityWidget.isEnabled(),
                   "audio_control_ready": widget.features.recordButton.isEnabled(),
                   "partition_state": widget.features.partition.state["state"] if widget.features.partition.state else None,

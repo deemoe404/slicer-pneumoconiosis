@@ -17,7 +17,8 @@ from pydicom.uid import DigitalXRayImageStorageForPresentation, ExplicitVRLittle
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "PneumoconiosisAnnotator"))
 from PneumoconiosisLib.core import AnnotationStore, empty_zones, scan_cases
-from PneumoconiosisLib.labelme_export import export_labelme, render_image
+from PneumoconiosisLib.labelme_export import export_labelme, label_file, render_image
+from PneumoconiosisLib.geometry import measurement_scale
 from PneumoconiosisLib.runtime import worker_command
 
 
@@ -53,14 +54,14 @@ class LabelmeTests(unittest.TestCase):
         self.case = next(c for c in self.cases if "批次 A" in c["file_path"])
         self.store = AnnotationStore(self.directory / "project")
         self.store.import_cases(self.cases)
-        self.ellipse = {"id": str(uuid.uuid4()), "kind": "ellipse", "label": "圆形小阴影 一",
+        self.circle = {"id": str(uuid.uuid4()), "kind": "circle", "label": "圆形小阴影 一",
                       "points_ijk": [[-.125, 3.5, 0], [2, 6, 0]]}
         self.polygon = {"id": str(uuid.uuid4()), "kind": "polygon", "label": "区域",
                         "points_ijk": [[2, 1, 0], [8, 1, 0], [6, 6, 0], [2, 6, 0]]}
         self.draft = {"id": str(uuid.uuid4()), "kind": "polygon", "label": "未画完",
                       "points_ijk": [[4, 3, 0], [5, 4, 0]]}
         self.store.save(self.case["case_id"], "reader-01", empty_zones(),
-                        spatial_annotations=[self.ellipse, self.polygon, self.draft])
+                        spatial_annotations=[self.circle, self.polygon, self.draft])
 
     def tearDown(self):
         self.store.close()
@@ -70,7 +71,7 @@ class LabelmeTests(unittest.TestCase):
         return self.store.export_snapshot([c["case_id"] for c in self.cases])
 
     def test_bundle_preserves_raster_coordinates_reader_isolation_and_snapshot(self):
-        second = dict(self.ellipse, label="第二位读者", points_ijk=[[4, 3, 0], [8, 6, 0]])
+        second = dict(self.circle, label="第二位读者", points_ijk=[[4, 3, 0], [8, 6, 0]])
         self.store.save(self.case["case_id"], "reader-02", empty_zones(), spatial_annotations=[second])
         self.store.save(self.case["case_id"], "reader-03", empty_zones(), display={"window": 10})
         snapshot = self.snapshot()
@@ -91,9 +92,11 @@ class LabelmeTests(unittest.TestCase):
             self.assertIsNone(data["imageData"])
             self.assertEqual((data["imageHeight"], data["imageWidth"]), (8, 10))
             self.assertEqual(data["reader_id"], reader)
-            self.assertEqual(data["shapes"][0]["source_points_ijk"], (self.ellipse if reader == "reader-01" else second)["points_ijk"])
-            self.assertEqual(len(data["shapes"][0]["points"]), 128)
-            self.assertEqual(data["shapes"][0]["shape_type"], "polygon")
+            self.assertEqual(data["shapes"][0]["source_points_ijk"], (self.circle if reader == "reader-01" else second)["points_ijk"])
+            self.assertEqual(len(data["shapes"][0]["points"]), 2)
+            self.assertEqual(data["shapes"][0]["shape_type"], "circle")
+            ends = np.asarray((self.circle if reader == "reader-01" else second)["points_ijk"])
+            np.testing.assert_allclose(data["shapes"][0]["points"], [ends[:, :2].mean(axis=0), ends[1, :2]])
             if reader == "reader-01":
                 self.assertEqual(data["shapes"][1]["points"], [p[:2] for p in self.polygon["points_ijk"]])
                 self.assertTrue(data["flags"]["has_skipped_shapes"])
@@ -111,6 +114,18 @@ class LabelmeTests(unittest.TestCase):
         self.assertTrue(any(r["skipped_shapes"] for r in report["records"]))
         for case in self.cases:
             self.assertEqual(hashlib.sha256(Path(case["file_path"]).read_bytes()).hexdigest(), case["source_sha256"])
+
+    def test_non_square_pixels_export_same_physical_circle_without_resampling(self):
+        record = self.store.get(self.case["case_id"], "reader-01")
+        record["image"]["measurement_scale"] = measurement_scale({"PixelSpacing": [.2, .4]})
+        label, _ = label_file(record)
+        shape = label["shapes"][0]
+        self.assertEqual((shape["source_kind"], shape["shape_type"], len(shape["points"])), ("circle", "polygon", 128))
+        ends = np.asarray(self.circle["points_ijk"])[:, :2]
+        center = ends.mean(axis=0)
+        radius = np.linalg.norm((ends[1] - ends[0]) * [.4, .2]) / 2
+        np.testing.assert_allclose(np.linalg.norm((np.asarray(shape["points"]) - center) * [.4, .2], axis=1), radius)
+        self.assertAlmostEqual(shape["measurement"]["diameter"], 2 * radius)
 
     def test_png_inversion_and_rescale_keep_stored_pixel_order(self):
         path = self.source / "批次 A/胸片.dcm"

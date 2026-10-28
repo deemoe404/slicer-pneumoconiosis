@@ -1,0 +1,23 @@
+{
+  "macosx-arm64": {
+    "filename": "35403-macosx-arm64-ExtraMarkups-gitf5c833b-2026-10-19.tar.gz",
+    "url": "https://slicer-packages.kitware.com/api/v1/file/6adb10cc32e5d6bfbf6e903d/download",
+    "sha512": "92239fbe163d29c6049545a32ddd0aae809075f80eb6558ec7439e1a551b561b9675d88ed7a7be54245ba6c9f6681331a3586bd1566988c778c1d5ee1a1eade1",
+    "slicer_revision": "35403",
+    "source_revision": "f5c833b"
+  },
+  "macosx-amd64": {
+    "filename": "35403-macosx-amd64-ExtraMarkups-gitf5c833b-2026-10-19.tar.gz",
+    "url": "https://slicer-packages.kitware.com/api/v1/file/6adb54c632e5d6bfbf6ef39b/download",
+    "sha512": "c7f40f998a7ad52aa2cde53fc9b1aa728485f2bd9662c45bac9e7565b30912cf883148c6316fed16c4c0c0d6b1ab302a3c3e3b565263bcae5e9d204c8f2baddb",
+    "slicer_revision": "35403",
+    "source_revision": "f5c833b"
+  },
+  "win-amd64": {
+    "filename": "35392-win-amd64-ExtraMarkups-gitf5c833b-2026-10-19.zip",
+    "url": "https://slicer-packages.kitware.com/api/v1/file/6ad87e2532e5d6bfbf6be570/download",
+    "sha512": "8adf01df35db1d5df76411202d51d65822c562c0a2a3d0d0edc93b10ee31e31274ad8414be9078776c4a97524eeec687e58197a7eddfaf65e6cfceb9dc9b8800",
+    "slicer_revision": "35392",
+    "source_revision": "f5c833b"
+  }
+}

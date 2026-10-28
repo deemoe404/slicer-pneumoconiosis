@@ -41,7 +41,8 @@ jobs:
             ${{ steps.pip-cache.outputs.path }}
             local-data/models
             local-data/windows-downloads
-          key: windows-installer-${{ hashFiles('mise.toml', 'requirements-*.txt', 'packaging/windows/inputs.json', 'PneumoconiosisAnnotator/PneumoconiosisLib/model_config.py') }}
+            local-data/extension-downloads
+          key: windows-installer-${{ hashFiles('mise.toml', 'requirements-*.txt', 'packaging/windows/inputs.json', 'packaging/extra-markups.json', 'PneumoconiosisAnnotator/PneumoconiosisLib/model_config.py') }}
           restore-keys: windows-installer-
 
       - name: Prepare build runtime
@@ -96,7 +97,8 @@ jobs:
             ${{ steps.pip-cache.outputs.path }}
             local-data/models
             local-data/windows-downloads
-          key: windows-installer-${{ hashFiles('mise.toml', 'requirements-*.txt', 'packaging/windows/inputs.json', 'PneumoconiosisAnnotator/PneumoconiosisLib/model_config.py') }}
+            local-data/extension-downloads
+          key: windows-installer-${{ hashFiles('mise.toml', 'requirements-*.txt', 'packaging/windows/inputs.json', 'packaging/extra-markups.json', 'PneumoconiosisAnnotator/PneumoconiosisLib/model_config.py') }}
 
       - name: Upload small failure diagnostics
         if: ${{ failure() }}
