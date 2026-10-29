@@ -76,6 +76,7 @@ jobs:
           Includes the pinned Slicer build, matching ExtraMarkups circle tools, a standalone Python runtime, CPU model and audio dependencies, and verified model weights.
           Starts empty: choose the chest-image directory, then explicitly create or open an annotation project. Source/project paths and save status remain visible; closing saves the project without Slicer's scene-save prompt.
           Twelve discrete rating cells are grouped into four major levels; clicking a cell jumps directly to that grade. Native circles display diameter and polygons display width.
+          Lung segmentation displays a full-window progress overlay until the result is rendered and saved. Mouse/keyboard input, image interaction, shortcuts, directory drops and close requests are blocked; startup, worker and result-validation failures restore input and allow retry.
           Research delivery exports all participating readers, annotations, attachments, image index and a manifest, without original DICOM images. LabelMe PNG/JSON export is a separate button.
           Legacy point/ellipse annotations are not converted to circles; use a separate new project when the unsupported-annotation message appears. Existing files remain intact.
           Installer minimum: $($build.windows.minimum_release) x64 ($($build.windows.minimum_version)), based on Slicer's UTF-8 path requirements. This is a compatibility target; Windows 10 client versions still require on-device verification.
@@ -85,6 +86,7 @@ jobs:
           Reference comparison checks cover OT/CR loading, file navigation, independent window/level and zoom, case/markup isolation, and remembered or missing external folders.
           Bundles Chinese Slicer, CTK and Qt translations for offline use. Checks cover Chinese native widgets, folder drag-and-drop into the annotation workflow, one-click return from native modules, and UTF-8/GB18030 DICOM text decoding with synthetic metadata.
           Installed GUI checks also exercise direct slider clicks, the compiled circle extension and actual offline LabelMe export. Separate normal processes verify project creation/reopening, save-failure exit protection, persisted pending changes and absence of scene-save prompts.
+          Segmentation regression checks exercise real input events, worker termination, startup failure, worker error, rejected results and successful inference with the interface locked through persistence.
           Annotation data lives outside the program installation directory and is retained on uninstall.
           The installer is unsigned. Physical GPU, microphone and clinician acceptance remain separate.
           "@

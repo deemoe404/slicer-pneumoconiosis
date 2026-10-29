@@ -22,7 +22,9 @@ class BusyOverlay(qt.QWidget):
         self.dialog.setWindowModality(qt.Qt.ApplicationModal)
         self.dialog.setAttribute(qt.Qt.WA_TranslucentBackground)
         self.dialog.setStyleSheet("QFrame#PneumoBusyShade {background:rgba(15,22,30,155);}")
-        self.dialog.installEventFilter(self)
+        # Run before the application's image/shortcut filters as well as Qt's
+        # modal-window handling, including events addressed to a background view.
+        slicer.app.installEventFilter(self)
         outer = qt.QVBoxLayout(self.dialog)
         outer.setContentsMargins(0, 0, 0, 0)
         shade = qt.QFrame()
@@ -73,18 +75,37 @@ class BusyOverlay(qt.QWidget):
             self.progress.setRange(0, total)
             self.progress.setValue(current)
 
+    def set_text(self, text):
+        if self.dialog is not None:
+            self.label.setText(text)
+
     def end(self):
         self.nesting = max(0, self.nesting - 1)
         if self.nesting or self.dialog is None:
             return
         dialog, self.dialog = self.dialog, None
-        dialog.removeEventFilter(self)
+        slicer.app.removeEventFilter(self)
         dialog.hide()
         dialog.deleteLater()
 
     def eventFilter(self, obj, event):
-        return bool(obj == self.dialog and (event.type() == qt.QEvent.Close or
-                    (event.type() == qt.QEvent.KeyPress and event.key() == qt.Qt.Key_Escape)))
+        if self.dialog is None:
+            return False
+        kind = event.type()
+        if obj == self.dialog and (kind == qt.QEvent.Close or
+                (kind == qt.QEvent.KeyPress and event.key() == qt.Qt.Key_Escape)):
+            event.ignore()
+            return True
+        if kind in (qt.QEvent.MouseButtonPress, qt.QEvent.MouseButtonRelease, qt.QEvent.MouseButtonDblClick,
+                    qt.QEvent.MouseMove, qt.QEvent.Wheel, qt.QEvent.KeyPress, qt.QEvent.KeyRelease,
+                    qt.QEvent.Shortcut, qt.QEvent.ShortcutOverride, qt.QEvent.ContextMenu,
+                    qt.QEvent.DragEnter, qt.QEvent.DragMove, qt.QEvent.Drop, qt.QEvent.InputMethod,
+                    qt.QEvent.TouchBegin, qt.QEvent.TouchUpdate, qt.QEvent.TouchEnd,
+                    qt.QEvent.TabletPress, qt.QEvent.TabletMove, qt.QEvent.TabletRelease):
+            if not obj.isWidgetType() or (obj != self.dialog and not self.dialog.isAncestorOf(obj)):
+                event.accept()
+                return True
+        return False
 
     @contextmanager
     def during(self, text):

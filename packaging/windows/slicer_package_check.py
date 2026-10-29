@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from render_check import capture_rendered_view
 from reference_check import check_reference_view
 from language_check import check_language
+from segmentation_check import check_segmentation
 OUT = Path(os.environ["PNEUMO_TEST_OUTPUT"])
 OUT.mkdir(parents=True, exist_ok=True)
 REPORT = {"status": "failed", "checks": [], "synthetic_only": True,
@@ -210,10 +211,7 @@ try:
     for slider in w.gradeSliders.values():
         slider.set_value("0/0")
     w.ratingChanged()
-    w.features.autoButton.click()
-    deadline = time.monotonic() + 90
-    while w.features.jobs and time.monotonic() < deadline:
-        events(.1)
+    check_segmentation(w, OUT / "segmentation-check", check, events)
     if w.features.jobs or w.features.partition.state is None:
         REPORT["model_error"] = {"message": str(w.saveLabel.text), "button_enabled": w.features.autoButton.isEnabled(),
                                  "jobs": list(w.features.jobs), "case": w.currentRecord["case_id"]}

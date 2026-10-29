@@ -26,6 +26,7 @@ class CaseFeatures:
         self.audio = []
         self.model_worker = self.audio_worker = self.player = None
         self.jobs = {}
+        self.segmenting = False
         self.audio_job = None
         self.recording_started = None
         self.last_audio_error = None
@@ -136,6 +137,8 @@ class CaseFeatures:
                 "partition": self.partition_state, "audio": self.audio}
 
     def prepare_leave(self):
+        if self.segmenting:
+            return False
         if not self.stop_recording():
             return False
         if self.player:
@@ -163,12 +166,17 @@ class CaseFeatures:
             if worker:
                 worker.close()
         self.model_worker = self.audio_worker = self.player = None
+        self.end_segmentation()
         self.audioTimer.stop()
 
     def segment(self):
-        if self.w.currentRecord is None or self.partition_state is not None or self.jobs:
+        if self.w.currentRecord is None or self.partition_state is not None or self.segmenting or self.w.busy.nesting:
             return False
+        if not self.w.prepareLeave():
+            return False
+        self.segmenting = True
         try:
+            self.w.busy.begin("正在分割肺野与六区…")
             self.w.markups.finish()
             if self.model_worker is None or self.model_worker.process.state() == qt.QProcess.NotRunning:
                 self.model_worker = Worker(self.root, "model", self.model_event, self.model_ended)
@@ -185,11 +193,10 @@ class CaseFeatures:
                    "source_sha256": case["source_sha256"], "project": str(self.w.store.directory), "input": str(path)}
             self.jobs[key] = job
             self.model_worker.send(job)
-            self.autoButton.setToolTip("正在自动分割肺野，可以继续查看其他病例。")
             self.update_controls()
             return True
         except Exception as exc:
-            self.jobs.clear()
+            self.end_segmentation()
             self.w.showError("自动分割未启动：" + str(exc))
             self.update_controls()
             return False
@@ -201,16 +208,15 @@ class CaseFeatures:
         if value["event"] == "progress":
             self.autoButton.setText("加载模型…" if "加载" in value["text"] else "分割中…")
             self.autoButton.setToolTip(value["text"])
-            return
-        self.jobs.pop(value["job"], None)
-        if value["event"] == "error":
-            self.w.showError("自动分割失败：" + value["message"])
-            self.update_controls()
-            return
-        if self.w.store is None or str(self.w.store.directory) != job["project"]:
-            self.update_controls()
+            self.w.busy.set_text("正在分割肺野与六区…\n" + value["text"])
             return
         try:
+            if value["event"] == "error":
+                self.w.showError("自动分割失败：" + value["message"])
+                return
+            if self.w.store is None or str(self.w.store.directory) != job["project"]:
+                return
+            self.w.busy.set_text("正在分割肺野与六区…\n正在显示并保存结果…")
             partition = value["partition"]
             case = next(c for c in self.w.cases if c["case_id"] == job["case_id"])
             validate_partition(partition, case, self.w.store.assets)
@@ -225,11 +231,19 @@ class CaseFeatures:
                 self.w.flushSave()
         except Exception as exc:
             self.w.showError("分割结果未应用：" + str(exc))
-        self.update_controls()
+        finally:
+            self.end_segmentation()
+            self.update_controls()
+
+    def end_segmentation(self):
+        self.jobs.clear()
+        if self.segmenting:
+            self.segmenting = False
+            self.w.busy.end()
 
     def model_ended(self, code, _errors):
-        if self.jobs:
-            self.jobs.clear()
+        if self.segmenting:
+            self.end_segmentation()
             self.w.showError(f"分割进程已停止（{code}），当前评分仍保留，可重试。")
             self.update_controls()
 
