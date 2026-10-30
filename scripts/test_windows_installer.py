@@ -42,6 +42,26 @@ def run():
     command = [installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=" + str(install)]
     checked(command + ["/LOG=" + str(OUT / "install.log")], timeout=300)
     check((install / "PneumoconiosisAnnotator.exe").is_file(), "offline installer creates the application launcher")
+    probe_environment = clean_environment()
+    probe_environment.update(PNEUMO_METADATA_LAUNCHER=str(install / "PneumoconiosisAnnotator.exe"),
+                             PNEUMO_METADATA_INSTALLER=str(installer))
+    version_probe = """
+$ErrorActionPreference = 'Stop'
+@($env:PNEUMO_METADATA_LAUNCHER, $env:PNEUMO_METADATA_INSTALLER) | ForEach-Object {
+    $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($_)
+    [PSCustomObject]@{file = [System.IO.Path]::GetFileName($_); product = $info.ProductName;
+                     product_version = $info.ProductVersion; file_version = $info.FileVersion}
+} | ConvertTo-Json -Compress
+"""
+    versions = json.loads(subprocess.check_output(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", version_probe],
+        env=probe_environment, text=True, timeout=30))
+    for value in versions:
+        check(value["product"] == "PneumoconiosisAnnotator"
+              and value["product_version"] == metadata["version"]
+              and value["file_version"] == metadata["version"] + ".0",
+              "launcher/installer product metadata matches the release: " + value["file"])
+    REPORT["product_metadata"] = versions
     for relative, digest in metadata["files"].items():
         if file_sha256(install / relative) != digest:
             raise AssertionError("Installed file differs from payload: " + relative)

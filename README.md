@@ -117,11 +117,17 @@ SLICER_APP="$HOME/Applications/3D Slicer 5.13.0 2026-10-22.app" ./启动尘肺�
 
 ## 隐私与数据位置
 
+英文说明与联网范围见 [Privacy policy](PRIVACY.md)，组件来源、许可证与模型权重许可待确认事项见 [Third-party components](docs/third-party.md)。
+
 原始 DICOM 只读，导出不打包原片或标准片。标准片从外部目录读取，本地只记住目录及所选文件。源码版和 Windows 安装版都将标注与录音保存在用户明确选择的项目文件夹。模型位于 `local-data/models/`（安装版在程序目录内），功能测试位于忽略的 `local-data/qa/`；Windows 的应用偏好与日志位于 `%LOCALAPPDATA%/PneumoconiosisAnnotator/`。导出不包含源文件绝对路径、患者姓名字段或原始 DICOM UID；原片对照表保留原有文件名和相对目录，可能含身份信息，应与原始数据一起保管。录音保留原声，不自动转写或脱敏。
 
 备份时关闭模块，完整保存项目目录及原始 DICOM；只备份 SQLite 文件会遗漏录音和掩膜。具体目录说明见 [本地项目与备份](docs/usage.md#本地项目与备份)。
 
 LabelMe 导出会生成胸片的 8 位 PNG 查看图，保留原图像素尺寸和片内文字，不自动脱敏；它不保留 DICOM 的完整灰度信息。原始 DICOM 仍须保留。
+
+## Code signing policy
+
+当前公开的 Windows 安装包尚未数字签名；SHA256 用于文件校验。项目正在准备 SignPath Foundation 开源签名申请，尚未获批或启用签名。维护者职责、签名范围与发行要求见 [Code signing policy](CODE_SIGNING.md)，隐私说明见 [Privacy policy](PRIVACY.md)。
 
 ## 开发与测试
 

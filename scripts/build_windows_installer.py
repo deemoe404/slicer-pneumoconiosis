@@ -75,6 +75,10 @@ def clean_environment():
 def main():
     if sys.platform != "win32" or sys.version_info[:3] != (3, 12, 12):
         raise SystemExit("Build on Windows x64 with the project's Python 3.12.12 environment.")
+    version_parts = INPUTS["version"].split(".")
+    if len(version_parts) != 3 or any(not value.isascii() or not value.isdecimal() or int(value) > 65534
+                                      or str(int(value)) != value for value in version_parts):
+        raise ValueError("Windows product version must contain three canonical integers from 0 to 65534.")
     if PAYLOAD.exists():
         raise SystemExit("Use a fresh windows-build directory; an existing payload is never overwritten.")
     OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -126,7 +130,8 @@ def main():
     for name in ("feature_worker.py", "start.py"):
         shutil.copy2(ROOT / "scripts" / name, PAYLOAD / "scripts" / name)
     copy_tree(ROOT / "docs", PAYLOAD / "docs")
-    for name in ("README.md", "LICENSE", "requirements-runtime.txt", "requirements-test.txt", "requirements-windows-lock.txt"):
+    for name in ("README.md", "LICENSE", "CODE_SIGNING.md", "PRIVACY.md",
+                 "requirements-runtime.txt", "requirements-test.txt", "requirements-windows-lock.txt"):
         shutil.copy2(ROOT / name, PAYLOAD / name)
     (PAYLOAD / "qa").mkdir()
     shutil.copy2(ROOT / "tests/synthetic_pipeline.py", PAYLOAD / "qa/synthetic_pipeline.py")
@@ -146,7 +151,11 @@ def main():
     shutil.copy2(weights, PAYLOAD / "models" / WEIGHTS_FILE)
 
     metadata["dependencies"] = [{"name": d.metadata["Name"], "version": d.version,
-                                  "license": d.metadata.get("License-Expression", d.metadata.get("License", ""))}
+                                  "license": (d.metadata.get("License-Expression") or d.metadata.get("License") or "NOASSERTION"),
+                                  "license_classifiers": [value for value in d.metadata.get_all("Classifier", [])
+                                                          if value.startswith("License ::")],
+                                  "license_files": [str(path).replace("\\", "/") for path in d.files or []
+                                                    if path.name.lower().startswith(("license", "licence", "copying", "notice"))]}
                                  for d in sorted(importlib.metadata.distributions(), key=lambda d: d.metadata["Name"].lower())]
     notices = "Third-party notices\n\nThe project BSD-3-Clause license covers original code and documentation only.\n"
     notices += "Slicer and its component licenses are retained in Slicer/.\nPython's license is retained in runtime/python/.\n"
@@ -155,12 +164,25 @@ def main():
     notices += "Chinese translation sources, upstream URLs/checksums and licenses are retained in PneumoconiosisAnnotator/Resources/Translations/.\n"
     notices += "Python dependency license files are retained in runtime/python/Lib/site-packages, including *.dist-info/licenses.\n"
     notices += "Model source: " + WEIGHTS_URL + "\nModel SHA256: " + WEIGHTS_SHA256 + "\n\n"
+    notices += "Exact model-weight redistribution license: NOASSERTION; see docs/third-party.md.\n"
+    notices += "Code signing status and privacy: CODE_SIGNING.md and PRIVACY.md.\n\n"
     notices += "\n".join(d["name"] + " " + d["version"] + "\n" + d["license"] for d in metadata["dependencies"])
     (PAYLOAD / "THIRD-PARTY-NOTICES.txt").write_text(notices, encoding="utf-8")
 
     compiler = Path(os.environ["WINDIR"]) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
+    assembly_metadata = PAYLOAD.parent / "LauncherMetadata.cs"
+    assembly_metadata.write_text(
+        'using System.Reflection;\n'
+        '[assembly: AssemblyTitle("PneumoconiosisAnnotator")]\n'
+        '[assembly: AssemblyDescription("Local chest-radiograph research annotation")]\n'
+        '[assembly: AssemblyProduct("PneumoconiosisAnnotator")]\n'
+        '[assembly: AssemblyCompany("deemoe404")]\n'
+        '[assembly: AssemblyVersion("' + INPUTS["version"] + '.0")]\n'
+        '[assembly: AssemblyFileVersion("' + INPUTS["version"] + '.0")]\n'
+        '[assembly: AssemblyInformationalVersion("' + INPUTS["version"] + '")]\n', encoding="utf-8")
     checked([compiler, "/nologo", "/target:winexe", "/platform:x64", "/codepage:65001", "/reference:System.Windows.Forms.dll",
-             "/out:" + str(PAYLOAD / "PneumoconiosisAnnotator.exe"), ROOT / "packaging/windows/Launcher.cs"], timeout=60)
+             "/out:" + str(PAYLOAD / "PneumoconiosisAnnotator.exe"), ROOT / "packaging/windows/Launcher.cs",
+             assembly_metadata], timeout=60)
     metadata["files"] = {str(path.relative_to(PAYLOAD)).replace("\\", "/"): file_sha256(path)
                          for path in sorted(PAYLOAD.rglob("*")) if path.is_file() and path != PAYLOAD / "package.json"}
     (PAYLOAD / "package.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")

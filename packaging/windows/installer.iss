@@ -5,10 +5,10 @@
   #error Output must point to the output directory
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #error AppVersion must come from inputs.json
 #endif
 #ifndef BuildId
-  #define BuildId "local"
+  #error BuildId must identify the source revision
 #endif
 #ifndef MinimumWindowsVersion
   #error MinimumWindowsVersion must come from inputs.json
@@ -22,7 +22,14 @@ AppId={{FD48D678-6B2D-4BDF-9664-84203732C037}
 AppName=尘肺胸片标注
 AppVersion={#AppVersion}
 AppVerName=尘肺胸片标注 {#AppVersion}
-AppPublisher=SUEP CT Research
+AppPublisher=deemoe404
+AppPublisherURL=https://github.com/deemoe404/slicer-pneumoconiosis
+AppSupportURL=https://github.com/deemoe404/slicer-pneumoconiosis/issues
+VersionInfoProductName=PneumoconiosisAnnotator
+VersionInfoProductVersion={#AppVersion}.0
+VersionInfoProductTextVersion={#AppVersion}
+VersionInfoVersion={#AppVersion}.0
+VersionInfoTextVersion={#AppVersion}.0
 DefaultDirName={autopf}\PneumoconiosisAnnotator
 DefaultGroupName=尘肺胸片标注
 UninstallDisplayIcon={app}\PneumoconiosisAnnotator.exe
