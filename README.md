@@ -127,7 +127,7 @@ LabelMe 导出会生成胸片的 8 位 PNG 查看图，保留原图像素尺寸�
 
 ## Code signing policy
 
-当前公开的 Windows 安装包尚未数字签名；SHA256 用于文件校验。项目正在准备 SignPath Foundation 开源签名申请，尚未获批或启用签名。维护者职责、签名范围与发行要求见 [Code signing policy](CODE_SIGNING.md)，隐私说明见 [Privacy policy](PRIVACY.md)。
+当前公开的 Windows 安装包尚未数字签名；SHA256 用于文件校验。项目已于 2026-10-30 提交 SignPath Foundation 开源签名申请，正在等待审核，尚未获批或启用签名。维护者职责、签名范围与发行要求见 [Code signing policy](CODE_SIGNING.md)，隐私说明见 [Privacy policy](PRIVACY.md)。
 
 ## 开发与测试
 

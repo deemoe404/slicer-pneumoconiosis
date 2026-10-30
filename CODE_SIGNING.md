@@ -2,7 +2,7 @@
 
 ## Current status
 
-PneumoconiosisAnnotator is preparing an application to the [SignPath Foundation](https://signpath.org/). Acceptance, a signing account and a production certificate have not been obtained. Published Windows releases, including [0.3.1](https://github.com/deemoe404/slicer-pneumoconiosis/releases/tag/windows-v0.3.1-8634275-r14), are unsigned. A SHA-256 file is an integrity check, not a code signature.
+PneumoconiosisAnnotator submitted an application to the [SignPath Foundation](https://signpath.org/) on 2026-10-30 and is awaiting review. Acceptance, a signing account and a production certificate have not been obtained. Published Windows releases, including [0.3.1](https://github.com/deemoe404/slicer-pneumoconiosis/releases/tag/windows-v0.3.1-8634275-r14), are unsigned. A SHA-256 file is an integrity check, not a code signature.
 
 If approved, releases signed through that program will carry this attribution:
 
