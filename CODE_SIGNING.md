@@ -37,6 +37,8 @@ Before production signing is enabled:
 5. Verify signatures, the expected certificate publisher and trusted timestamp; test the resulting installed package; compute the final installer SHA-256 after signing.
 6. Obtain the maintainer's manual signing approval and record source/build/signing provenance with the release.
 
+Inno Setup uses space-padded version string resources. Installed-package checks retain the raw resource values and compare the expected identity after removing only trailing space/NUL padding. The future SignPath metadata restrictions must account for that native padding while still restricting the product name and version; no post-build binary rewriting is part of this preparation.
+
 No production signing workflow or account identifiers are configured yet. Current builds continue to be explicitly described as unsigned.
 
 ## Privacy and contact

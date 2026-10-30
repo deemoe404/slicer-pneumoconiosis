@@ -56,12 +56,17 @@ $ErrorActionPreference = 'Stop'
     versions = json.loads(subprocess.check_output(
         ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", version_probe],
         env=probe_environment, text=True, timeout=30))
-    for value in versions:
-        check(value["product"] == "PneumoconiosisAnnotator"
-              and value["product_version"] == metadata["version"]
-              and value["file_version"] == metadata["version"] + ".0",
-              "launcher/installer product metadata matches the release: " + value["file"])
     REPORT["product_metadata"] = versions
+    check(len(versions) == 2, "Windows version resources are read from both launcher and installer")
+    for value in versions:
+        # Inno Setup space-pads its fixed-size version string resources. Keep
+        # the raw evidence and compare identity after removing only that padding.
+        value["normalized"] = {name: value[name].rstrip(" \x00")
+                               for name in ("product", "product_version", "file_version")}
+        check(value["normalized"]["product"] == "PneumoconiosisAnnotator"
+              and value["normalized"]["product_version"] == metadata["version"]
+              and value["normalized"]["file_version"] == metadata["version"] + ".0",
+              "launcher/installer product metadata matches the release: " + json.dumps(value))
     for relative, digest in metadata["files"].items():
         if file_sha256(install / relative) != digest:
             raise AssertionError("Installed file differs from payload: " + relative)
